@@ -1013,9 +1013,6 @@ function openSettingsModal(){
   $('#stWeekStart').value=String(s.weekStart);
   $('#stMonthView').value=s.monthView;
   $('#stHighlight').value=s.highlightOpacity!=null?s.highlightOpacity:0.16;
-  $('#pkBg').style.background=pending.bgColor;
-  $('#pkFg').style.background=pending.fgColor;
-  $('#pkAccent').style.background=pending.accentColor;
 
   function previewTheme(){
     const bak=state.settings;
@@ -1030,13 +1027,17 @@ function openSettingsModal(){
       el:elSel, theme:'nano', default:initial,
       components:{preview:true,opacity:false,hue:true,interaction:{hex:true,input:true,clear:false,save:true}}
     });
-    p.on('change',(color)=>{ onPick(color.toHEXA().toString()); previewTheme(); });
+    p.on('change',(color)=>{
+      onPick(color.toHEXA().toString());
+      p.applyColor(true); // 立刻刷新触发按钮上显示的色块，不等点"保存"
+      previewTheme();
+    });
     p.on('save',()=>p.hide());
     pickrs.push(p);
   }
-  makePickr('#pkBg',pending.bgColor,(hex)=>{ pending.bgColor=hex; $('#pkBg').style.background=hex; });
-  makePickr('#pkFg',pending.fgColor,(hex)=>{ pending.fgColor=hex; $('#pkFg').style.background=hex; });
-  makePickr('#pkAccent',pending.accentColor,(hex)=>{ pending.accentColor=hex; $('#pkAccent').style.background=hex; });
+  makePickr('#pkBg',pending.bgColor,(hex)=>{ pending.bgColor=hex; });
+  makePickr('#pkFg',pending.fgColor,(hex)=>{ pending.fgColor=hex; });
+  makePickr('#pkAccent',pending.accentColor,(hex)=>{ pending.accentColor=hex; });
   $('#stHighlight').addEventListener('input',previewTheme);
 
   function cleanup(){ pickrs.forEach(p=>{ try{p.destroyAndRemove();}catch(e){} }); }
