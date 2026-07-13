@@ -15,6 +15,7 @@
     --text:#222;
     --muted:#8a8a8a;
     --accent:#4a7fe8;
+    --accent-contrast:#ffffff;
     --accent-faint:#4a7fe822;
     --accent-faint2:#4a7fe814;
     --shadow:#d8d8d8;
@@ -28,8 +29,8 @@
   button{font:inherit;cursor:pointer;background:var(--bg);border:1px solid var(--border);
     border-radius:0;padding:2px 6px;color:var(--text);}
   button:hover{border-color:var(--accent);color:var(--accent);}
-  button.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
-  input,select{font:inherit;border:1px solid var(--border);border-radius:0;padding:2px 4px;background:#fff;color:var(--text);}
+  button.primary{background:var(--accent);color:var(--accent-contrast);border-color:var(--accent);}
+  input,select{font:inherit;border:1px solid var(--border);border-radius:0;padding:2px 4px;background:var(--bg);color:var(--text);}
 
   .no-scrollbar{scrollbar-width:none;-ms-overflow-style:none;}
   .no-scrollbar::-webkit-scrollbar{display:none;width:0;height:0;}
@@ -112,10 +113,12 @@
   .inline-create input[type=text]{flex:1 1 auto;border:none;border-bottom:1px solid var(--accent);
     border-radius:0;background:transparent;padding:2px 0;}
   .inline-create input[type=text]:focus{outline:none;}
-  .inline-create .ic-time-btn{flex:0 0 auto;font-size:11px;padding:1px 5px;}
+  .inline-create .ic-time-btn{flex:0 0 auto;padding:2px 4px;border:none;background:none;
+    display:flex;align-items:center;justify-content:center;color:var(--muted);}
+  .inline-create .ic-time-btn:hover{color:var(--accent);}
   .inline-create input[type=time]{flex:0 0 auto;font-size:11px;padding:1px 3px;}
 
-  .item-menu{position:fixed;background:#fff;border:1px solid var(--border);border-radius:6px;
+  .item-menu{position:fixed;background:var(--bg);border:1px solid var(--border);border-radius:6px;
     box-shadow:0 4px 16px var(--shadow-a);z-index:1000;min-width:150px;overflow:hidden;}
   .item-menu .mi{padding:6px 10px;font-size:12px;}
   .item-menu .mi:hover{background:var(--accent-faint);}
@@ -124,7 +127,7 @@
   /* ---------- modal ---------- */
   .modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.25);display:flex;align-items:center;
     justify-content:center;z-index:2000;}
-  .modal{background:#fff;border-radius:8px;padding:16px;min-width:300px;max-width:90vw;
+  .modal{background:var(--bg);border-radius:8px;padding:16px;min-width:300px;max-width:90vw;
     box-shadow:0 10px 40px var(--shadow-a);}
   .modal .row .color-swatch{width:36px;height:22px;padding:0;border:1px solid var(--border);cursor:pointer;}
   .modal h3{margin:0 0 10px;font-size:14px;}
@@ -324,6 +327,13 @@ function mixHex(hexA,hexB,ratio){
   const a=hexToRgbArr(hexA), b=hexToRgbArr(hexB);
   return rgbToHex(a[0]+(b[0]-a[0])*ratio, a[1]+(b[1]-a[1])*ratio, a[2]+(b[2]-a[2])*ratio);
 }
+function relLuminance(hex){
+  const rgb=hexToRgbArr(hex).map(v=>v/255).map(c=> c<=0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055,2.4));
+  return 0.2126*rgb[0]+0.7152*rgb[1]+0.0722*rgb[2];
+}
+function contrastColor(hex){
+  return relLuminance(hex)>0.55 ? '#111111' : '#ffffff';
+}
 function applyTheme(){
   const s=state.settings;
   const bg=s.bgColor||'#f2f2f2';
@@ -339,6 +349,7 @@ function applyTheme(){
   root.setProperty('--border',border);
   root.setProperty('--muted',muted);
   root.setProperty('--accent',accent);
+  root.setProperty('--accent-contrast',contrastColor(accent));
   root.setProperty('--accent-faint',hexToRgba(accent,opacity));
   root.setProperty('--accent-faint2',hexToRgba(accent,opacity/2));
   root.setProperty('--shadow',shadow);
@@ -575,11 +586,12 @@ function startInlineCreate(itemsEl,anchorBase){
   const row=document.createElement('div'); row.className='inline-create';
   row.innerHTML=`
     <input type="text" class="ic-title" placeholder="输入标题，回车保存">
-    <button type="button" class="ic-time-btn" title="设置时间点">🕐</button>
+    <button type="button" class="ic-time-btn" title="设置时间点"><i data-lucide="clock"></i></button>
     <input type="time" class="ic-time" style="display:none;">
   `;
   const blank=itemsEl.querySelector('.cell-blank');
   itemsEl.insertBefore(row, blank);
+  if(window.lucide) lucide.createIcons();
   const titleInp=row.querySelector('.ic-title');
   const timeBtn=row.querySelector('.ic-time-btn');
   const timeInp=row.querySelector('.ic-time');
@@ -612,11 +624,13 @@ function startInlineEditItem(itemEl,it){
   const parent=itemEl.parentElement; if(!parent) return;
   const row=document.createElement('div'); row.className='inline-create';
   const titleInp=document.createElement('input'); titleInp.type='text'; titleInp.className='ic-title'; titleInp.value=it.title;
-  const timeBtn=document.createElement('button'); timeBtn.type='button'; timeBtn.className='ic-time-btn'; timeBtn.textContent='\u{1F550}'; timeBtn.title='设置时间点';
+  const timeBtn=document.createElement('button'); timeBtn.type='button'; timeBtn.className='ic-time-btn'; timeBtn.title='设置时间点';
+  timeBtn.appendChild(iconEl('clock'));
   const timeInp=document.createElement('input'); timeInp.type='time'; timeInp.className='ic-time'; timeInp.value=it.anchor.time||'';
   timeInp.style.display = it.anchor.time ? 'inline-block' : 'none';
   row.appendChild(titleInp); row.appendChild(timeBtn); row.appendChild(timeInp);
   parent.replaceChild(row,itemEl);
+  if(window.lucide) lucide.createIcons();
 
   let committed=false;
   timeBtn.onclick=(e)=>{
@@ -685,6 +699,7 @@ function equalizeRows(listEl){
 /* =========================================================
    列头
 ========================================================= */
+const TODAY_LABEL={day:'跳转到今天',week:'跳转到本周',month:'跳转到本月',year:'跳转到今年',life:'跳转到今年'};
 function colHeader(colId,name,focusLabel){
   const header=document.createElement('div'); header.className='col-header';
   const nameEl=document.createElement('span'); nameEl.className='col-name'; nameEl.textContent=name;
@@ -693,7 +708,7 @@ function colHeader(colId,name,focusLabel){
   header.appendChild(iconButton('chevron-left','上一页',()=>navigate(colId,-1)));
   header.appendChild(focusEl);
   header.appendChild(iconButton('chevron-right','下一页',()=>navigate(colId,1)));
-  header.appendChild(iconButton('crosshair','跳转到今天',()=>jumpToday(colId)));
+  header.appendChild(iconButton('crosshair',TODAY_LABEL[colId]||'跳转到今天',()=>jumpToday(colId)));
   header.appendChild(iconButton('target','让其它列对齐到这里',()=>alignAll(colId)));
   return header;
 }
@@ -821,14 +836,11 @@ function renderMonthColumn(root){
 
   if(state.settings.monthView==='week'){
     weeks.forEach(week=>{
-      const dayItems=week.days.reduce((acc,d)=>acc.concat(itemsForDay(d)),[]);
-      const combined=itemsForWeek(week.weekStart).concat(dayItems);
       list.appendChild(buildRow({
         label:`${fmtMD(week.weekStart)} 这一周`,
         anchorBase:{level:'week',date:week.weekStart,slotIndex:null},
-        items:combined,
-        current: week.weekStart===thisWeekStart,
-        showDate:true
+        items:itemsForWeek(week.weekStart),
+        current: week.weekStart===thisWeekStart
       }));
     });
   }else{
