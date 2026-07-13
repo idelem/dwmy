@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DWMY</title>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/themes/nano.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/pickr.min.js"></script>
 <style>
   :root{
     --bg:#f2f2f2;
@@ -14,7 +16,8 @@
     --accent:#4a7fe8;
     --accent-faint:#4a7fe822;
     --accent-faint2:#4a7fe814;
-    --backlog-bg:#00000010;
+    --shadow:#d8d8d8;
+    --shadow-a:#00000022;
     --danger:#c0504d;
   }
   *{box-sizing:border-box;}
@@ -31,7 +34,7 @@
   .no-scrollbar::-webkit-scrollbar{display:none;width:0;height:0;}
 
   /* ---------- top bar ---------- */
-  #topbar{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--bg);
+  #topbar{display:flex;align-items:center;gap:4px;padding:4px 8px;background:var(--bg);
     border-bottom:1px solid var(--border);}
   #topbar .title{font-weight:700;letter-spacing:.5px;margin-right:auto;}
 
@@ -46,7 +49,7 @@
   .col-header button{padding:1px 5px;font-size:12px;}
 
   .backlog{flex:0 0 auto;max-height:110px;overflow-y:auto;border-bottom:1px solid var(--border);
-    padding:3px 8px;background:var(--backlog-bg);}
+    padding:3px 8px;background:var(--shadow);}
   .backlog.empty{display:none;}
   .backlog-label{font-size:10px;color:var(--muted);padding:2px 0 3px;text-transform:uppercase;letter-spacing:.5px;}
 
@@ -97,7 +100,7 @@
   .inline-create input[type=time]{flex:0 0 auto;font-size:11px;padding:1px 3px;}
 
   .item-menu{position:fixed;background:#fff;border:1px solid var(--border);border-radius:6px;
-    box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:1000;min-width:150px;overflow:hidden;}
+    box-shadow:0 4px 16px var(--shadow-a);z-index:1000;min-width:150px;overflow:hidden;}
   .item-menu .mi{padding:6px 10px;font-size:12px;}
   .item-menu .mi:hover{background:var(--accent-faint);}
   .item-menu hr{border:none;border-top:1px solid var(--border);margin:2px 0;}
@@ -106,7 +109,8 @@
   .modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.25);display:flex;align-items:center;
     justify-content:center;z-index:2000;}
   .modal{background:#fff;border-radius:8px;padding:16px;min-width:300px;max-width:90vw;
-    box-shadow:0 10px 40px rgba(0,0,0,.2);}
+    box-shadow:0 10px 40px var(--shadow-a);}
+  .modal .row .color-swatch{width:36px;height:22px;padding:0;border:1px solid var(--border);cursor:pointer;}
   .modal h3{margin:0 0 10px;font-size:14px;}
   .modal .row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
   .modal .row label{flex:0 0 80px;color:var(--muted);font-size:12px;}
@@ -179,6 +183,8 @@ function defaultSettings(){
     ],
     monthView:'day', // 'day' | 'week'
     accentColor:'#4a7fe8',
+    bgColor:'#f2f2f2',
+    fgColor:'#222222',
     highlightOpacity:0.16
   };
 }
@@ -273,18 +279,36 @@ function updateItemTitle(id,title,time){
 function isPending(it){ return it.type==='task' && (it.state==='todo'||it.state==='started'); }
 
 function hexToRgba(hex,alpha){
-  const m=hex.replace('#','');
-  const full = m.length===3 ? m.split('').map(c=>c+c).join('') : m;
-  const r=parseInt(full.slice(0,2),16), g=parseInt(full.slice(2,4),16), b=parseInt(full.slice(4,6),16);
+  const [r,g,b]=hexToRgbArr(hex);
   return `rgba(${r},${g},${b},${alpha})`;
+}
+function hexToRgbArr(hex){
+  const m=(hex||'#000000').replace('#','');
+  const full = m.length===3 ? m.split('').map(c=>c+c).join('') : m;
+  return [parseInt(full.slice(0,2),16)||0,parseInt(full.slice(2,4),16)||0,parseInt(full.slice(4,6),16)||0];
+}
+function rgbToHex(r,g,b){
+  return '#'+[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
+}
+function darkenHex(hex,amt){
+  const [r,g,b]=hexToRgbArr(hex);
+  return rgbToHex(r*(1-amt),g*(1-amt),b*(1-amt));
 }
 function applyTheme(){
   const s=state.settings;
-  const opacity = s.highlightOpacity!=null ? s.highlightOpacity : 0.16;
+  const bg=s.bgColor||'#f2f2f2';
+  const fg=s.fgColor||'#222222';
+  const accent=s.accentColor||'#4a7fe8';
+  const opacity=s.highlightOpacity!=null?s.highlightOpacity:0.16;
+  const shadow=darkenHex(bg,0.13);
   const root=document.documentElement.style;
-  root.setProperty('--accent',s.accentColor);
-  root.setProperty('--accent-faint',hexToRgba(s.accentColor,opacity));
-  root.setProperty('--accent-faint2',hexToRgba(s.accentColor,opacity/2));
+  root.setProperty('--bg',bg);
+  root.setProperty('--text',fg);
+  root.setProperty('--accent',accent);
+  root.setProperty('--accent-faint',hexToRgba(accent,opacity));
+  root.setProperty('--accent-faint2',hexToRgba(accent,opacity/2));
+  root.setProperty('--shadow',shadow);
+  root.setProperty('--shadow-a',hexToRgba(shadow,0.55));
 }
 
 function findSlotForTime(time){
@@ -923,9 +947,10 @@ function alignAll(colId){
 ========================================================= */
 function openSettingsModal(){
   const mask=document.createElement('div'); mask.className='modal-mask';
-  mask.onclick=(e)=>{ if(e.target===mask) mask.remove(); };
   const modal=document.createElement('div'); modal.className='modal';
   const s=state.settings;
+  const pending={ bgColor:s.bgColor||'#f2f2f2', fgColor:s.fgColor||'#222222', accentColor:s.accentColor||'#4a7fe8' };
+
   modal.innerHTML=`
     <h3>设置</h3>
     <div class="row"><label>周起始</label>
@@ -934,7 +959,9 @@ function openSettingsModal(){
     <div class="row"><label>Month视图</label>
       <select id="stMonthView"><option value="day">日视图</option><option value="week">周视图</option></select>
     </div>
-    <div class="row"><label>重点色</label><input id="stAccent" type="color"></div>
+    <div class="row"><label>背景色</label><button type="button" id="pkBg" class="color-swatch"></button></div>
+    <div class="row"><label>文字色</label><button type="button" id="pkFg" class="color-swatch"></button></div>
+    <div class="row"><label>重点色</label><button type="button" id="pkAccent" class="color-swatch"></button></div>
     <div class="row"><label>高亮强度</label><input id="stHighlight" type="range" min="0.05" max="0.5" step="0.01"></div>
     <h3 style="margin-top:14px;">时段设置</h3>
     <div class="settings-grid" id="stSlots"></div>
@@ -947,8 +974,35 @@ function openSettingsModal(){
   const $=(sel)=>modal.querySelector(sel);
   $('#stWeekStart').value=String(s.weekStart);
   $('#stMonthView').value=s.monthView;
-  $('#stAccent').value=s.accentColor;
   $('#stHighlight').value=s.highlightOpacity!=null?s.highlightOpacity:0.16;
+  $('#pkBg').style.background=pending.bgColor;
+  $('#pkFg').style.background=pending.fgColor;
+  $('#pkAccent').style.background=pending.accentColor;
+
+  function previewTheme(){
+    const bak=state.settings;
+    state.settings=Object.assign({},bak,pending,{highlightOpacity:Number($('#stHighlight').value)});
+    applyTheme();
+    state.settings=bak;
+  }
+
+  const pickrs=[];
+  function makePickr(elSel,initial,onPick){
+    const p=Pickr.create({
+      el:elSel, theme:'nano', default:initial,
+      components:{preview:true,opacity:false,hue:true,interaction:{hex:true,input:true,clear:false,save:true}}
+    });
+    p.on('change',(color)=>{ onPick(color.toHEXA().toString()); previewTheme(); });
+    p.on('save',()=>p.hide());
+    pickrs.push(p);
+  }
+  makePickr('#pkBg',pending.bgColor,(hex)=>{ pending.bgColor=hex; $('#pkBg').style.background=hex; });
+  makePickr('#pkFg',pending.fgColor,(hex)=>{ pending.fgColor=hex; $('#pkFg').style.background=hex; });
+  makePickr('#pkAccent',pending.accentColor,(hex)=>{ pending.accentColor=hex; $('#pkAccent').style.background=hex; });
+  $('#stHighlight').addEventListener('input',previewTheme);
+
+  function cleanup(){ pickrs.forEach(p=>{ try{p.destroyAndRemove();}catch(e){} }); }
+  function cancel(){ cleanup(); mask.remove(); applyTheme(); }
 
   const slotsWrap=$('#stSlots');
   s.daySlots.forEach((slot,i)=>{
@@ -959,15 +1013,19 @@ function openSettingsModal(){
     `;
   });
 
-  $('#stCancel').onclick=()=>mask.remove();
+  $('#stCancel').onclick=cancel;
+  mask.addEventListener('click',(e)=>{ if(e.target===mask) cancel(); });
   $('#stSave').onclick=()=>{
     s.weekStart=Number($('#stWeekStart').value);
     s.monthView=$('#stMonthView').value;
-    s.accentColor=$('#stAccent').value;
+    s.bgColor=pending.bgColor;
+    s.fgColor=pending.fgColor;
+    s.accentColor=pending.accentColor;
     s.highlightOpacity=Number($('#stHighlight').value);
     slotsWrap.querySelectorAll('input').forEach(inp=>{
       s.daySlots[Number(inp.dataset.i)][inp.dataset.f]=inp.value;
     });
+    cleanup();
     applyTheme();
     saveState(); mask.remove(); renderAll();
   };
