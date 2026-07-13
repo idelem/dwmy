@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DWMY</title>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/themes/nano.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/pickr.min.js"></script>
 <style>
@@ -34,19 +35,25 @@
   .no-scrollbar::-webkit-scrollbar{display:none;width:0;height:0;}
 
   /* ---------- top bar ---------- */
-  #topbar{display:flex;align-items:center;gap:4px;padding:4px 8px;background:var(--bg);
+  #topbar{display:flex;align-items:stretch;gap:0;height:32px;padding:0;background:var(--bg);
     border-bottom:1px solid var(--border);}
-  #topbar .title{font-weight:700;letter-spacing:.5px;margin-right:auto;}
+  #topbar .title{display:flex;align-items:center;font-weight:700;letter-spacing:.5px;margin-right:auto;padding:0 10px;}
+  #topbar button{height:100%;margin:0;border:none;border-left:1px solid var(--border);border-radius:0;
+    padding:0 12px;display:flex;align-items:center;justify-content:center;background:var(--bg);}
+  #topbar button:hover{background:var(--accent-faint2);color:var(--accent);}
 
   /* ---------- app / columns ---------- */
   #app{display:flex;height:calc(100% - 33px);overflow-x:auto;}
   .column{flex:1 1 300px;min-width:260px;max-width:420px;display:flex;flex-direction:column;
     border-right:1px solid var(--border);background:var(--bg);min-height:0;}
-  .col-header{display:flex;align-items:center;gap:2px;padding:4px 6px;
+  .col-header{display:flex;align-items:stretch;gap:0;height:28px;padding:0;
     border-bottom:1px solid var(--border);flex:0 0 auto;}
-  .col-header .col-name{font-weight:700;flex:0 0 auto;font-size:12px;color:var(--muted);}
-  .col-header .col-focus{flex:1 1 auto;text-align:center;font-size:12px;font-weight:600;}
-  .col-header button{padding:1px 5px;font-size:12px;}
+  .col-header .col-name{font-weight:700;flex:0 0 auto;font-size:11px;color:var(--muted);
+    display:flex;align-items:center;padding:0 6px;}
+  .col-header .col-focus{flex:1 1 auto;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;}
+  .col-header button{height:100%;margin:0;border:none;border-left:1px solid var(--border);border-radius:0;
+    padding:0 6px;display:flex;align-items:center;justify-content:center;background:var(--bg);}
+  .col-header button:hover{background:var(--accent-faint2);color:var(--accent);}
 
   .backlog{flex:0 0 auto;max-height:110px;overflow-y:auto;border-bottom:1px solid var(--border);
     padding:3px 8px;background:var(--shadow);}
@@ -56,18 +63,21 @@
   .mainview{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
   .mainview .toolbar{flex:0 0 auto;padding:3px 8px;}
   .mainview .toolbar button{width:100%;font-size:11px;}
-  .cell-list{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;}
+  .cell-list{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow-y:auto;
+    scrollbar-width:none;-ms-overflow-style:none;}
+  .cell-list::-webkit-scrollbar{display:none;width:0;height:0;}
 
   .currentperiod{flex:0 0 25%;overflow-y:auto;border-top:1px solid var(--border);
     padding:3px 8px;display:flex;flex-direction:column;}
   .cp-label{font-size:10px;color:var(--muted);padding:2px 0 3px;text-transform:uppercase;letter-spacing:.5px;flex:0 0 auto;}
 
   /* ---------- generic row/cell ---------- */
-  .cell{flex:1 1 0;min-height:22px;display:flex;flex-direction:column;
+  .cell{flex:0 0 auto;min-height:0;display:flex;flex-direction:column;
     border-bottom:1px solid var(--border);padding:2px 8px;background:transparent;}
   .cell.current{background:var(--accent-faint);}
   .cell .cell-label{font-size:10px;color:var(--muted);flex:0 0 auto;display:flex;gap:6px;}
   .cell-items{flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;}
+  .row-items{display:block;}
   .cell-blank{flex:1 1 auto;min-height:14px;cursor:text;}
   .cell.week-boundary{border-top:2px solid var(--accent);}
 
@@ -76,20 +86,22 @@
   /* ---------- item ---------- */
   .item{display:flex;align-items:flex-start;gap:5px;padding:1px 2px;border-radius:3px;position:relative;flex:0 0 auto;}
   .item:hover{background:var(--accent-faint2);}
-  .item .cb{flex:0 0 auto;width:12px;height:12px;margin-top:3px;border:1.5px solid var(--muted);
-    border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:8px;}
-  .item[data-state="started"] .cb{border-color:var(--accent);background:var(--accent-faint);}
-  .item[data-state="done"] .cb{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .item .cb{flex:0 0 auto;width:16px;height:16px;margin-top:1px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;color:var(--muted);}
+  .item[data-state="started"] .cb{color:var(--accent);}
+  .item[data-state="done"] .cb{color:var(--accent);}
   .item[data-state="done"] .title{text-decoration:line-through;color:var(--muted);}
-  .item[data-state="canceled"] .cb{border-color:var(--danger);color:var(--danger);}
+  .item[data-state="canceled"] .cb{color:var(--text);opacity:.45;}
   .item[data-state="canceled"] .title{text-decoration:line-through;color:var(--muted);font-style:italic;}
-  .item.event .cb{border-radius:50%;border-color:var(--muted);cursor:default;background:#ddd;}
+  .item.event .cb{cursor:default;color:var(--muted);}
   .item .date-badge{flex:0 0 auto;font-size:10px;color:var(--accent);margin-top:2px;}
   .item .title{flex:1 1 auto;word-break:break-word;line-height:1.35;}
   .item .time{font-size:10px;color:var(--muted);flex:0 0 auto;margin-top:2px;}
   .item .menu-btn{flex:0 0 auto;opacity:.35;font-size:12px;color:var(--muted);padding:0 3px;border:none;background:none;}
   .item:hover .menu-btn, .item .menu-btn.open{opacity:1;}
   .item .menu-btn:hover{color:var(--accent);}
+
+  .lucide{width:14px;height:14px;stroke-width:2;vertical-align:middle;display:block;}
 
   /* ---------- inline create ---------- */
   .inline-create{display:flex;align-items:center;gap:4px;flex:0 0 auto;padding:2px 0;}
@@ -123,10 +135,10 @@
 
 <div id="topbar">
   <div class="title">DWMY</div>
-  <button id="btnExport">导出</button>
-  <button id="btnImport">导入</button>
+  <button id="btnExport" title="导出"></button>
+  <button id="btnImport" title="导入"></button>
   <input type="file" id="fileImport" accept="application/json" style="display:none;">
-  <button id="btnSettings">设置</button>
+  <button id="btnSettings" title="设置"></button>
 </div>
 
 <div id="app"></div>
@@ -167,6 +179,16 @@ function fmtMD(key){const [,m,d]=key.split('-');return `${Number(m)}/${Number(d)
 function fmtYM(key){const [y,m]=key.split('-');return `${y}年${Number(m)}月`;}
 const WEEKDAY_NAMES=['日','一','二','三','四','五','六'];
 const MONTH_NAMES=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+function iconEl(name){
+  const i=document.createElement('i'); i.setAttribute('data-lucide',name); return i;
+}
+function iconButton(name,title,onClick){
+  const btn=document.createElement('button'); btn.type='button'; btn.title=title;
+  btn.appendChild(iconEl(name));
+  btn.onclick=onClick;
+  return btn;
+}
 
 /* =========================================================
    数据层：store
@@ -294,6 +316,10 @@ function darkenHex(hex,amt){
   const [r,g,b]=hexToRgbArr(hex);
   return rgbToHex(r*(1-amt),g*(1-amt),b*(1-amt));
 }
+function mixHex(hexA,hexB,ratio){
+  const a=hexToRgbArr(hexA), b=hexToRgbArr(hexB);
+  return rgbToHex(a[0]+(b[0]-a[0])*ratio, a[1]+(b[1]-a[1])*ratio, a[2]+(b[2]-a[2])*ratio);
+}
 function applyTheme(){
   const s=state.settings;
   const bg=s.bgColor||'#f2f2f2';
@@ -301,9 +327,11 @@ function applyTheme(){
   const accent=s.accentColor||'#4a7fe8';
   const opacity=s.highlightOpacity!=null?s.highlightOpacity:0.16;
   const shadow=darkenHex(bg,0.13);
+  const border=mixHex(bg,fg,0.22);
   const root=document.documentElement.style;
   root.setProperty('--bg',bg);
   root.setProperty('--text',fg);
+  root.setProperty('--border',border);
   root.setProperty('--accent',accent);
   root.setProperty('--accent-faint',hexToRgba(accent,opacity));
   root.setProperty('--accent-faint2',hexToRgba(accent,opacity/2));
@@ -465,9 +493,13 @@ function renderItemEl(it,opts){
 
   const cb=document.createElement('div'); cb.className='cb';
   if(it.type==='task'){
-    if(it.state==='done') cb.textContent='\u2713';
-    if(it.state==='canceled') cb.textContent='\u2715';
+    const iconName = it.state==='todo' ? 'circle' : it.state==='started' ? 'circle-dot' : it.state==='done' ? 'check' : 'x';
+    cb.appendChild(iconEl(iconName));
+    cb.title = it.state==='todo'?'待办（点击切换）': it.state==='started'?'进行中（点击切换）': it.state==='done'?'已完成（点击切换）':'已取消';
     cb.onclick=(e)=>{e.stopPropagation();cycleState(it.id);renderAll();};
+  }else{
+    cb.appendChild(iconEl('minus'));
+    cb.title='事件';
   }
   el.appendChild(cb);
 
@@ -486,7 +518,7 @@ function renderItemEl(it,opts){
     el.appendChild(t);
   }
 
-  const menuBtn=document.createElement('button'); menuBtn.className='menu-btn'; menuBtn.textContent='\u22ee';
+  const menuBtn=document.createElement('button'); menuBtn.className='menu-btn'; menuBtn.textContent='\u22ee'; menuBtn.title='更多操作';
   menuBtn.onclick=(e)=>{e.stopPropagation();openItemMenu(menuBtn,it.id);};
   el.appendChild(menuBtn);
 
@@ -537,7 +569,7 @@ function startInlineCreate(itemsEl,anchorBase){
   const row=document.createElement('div'); row.className='inline-create';
   row.innerHTML=`
     <input type="text" class="ic-title" placeholder="输入标题，回车保存">
-    <button type="button" class="ic-time-btn">🕐</button>
+    <button type="button" class="ic-time-btn" title="设置时间点">🕐</button>
     <input type="time" class="ic-time" style="display:none;">
   `;
   const blank=itemsEl.querySelector('.cell-blank');
@@ -574,7 +606,7 @@ function startInlineEditItem(itemEl,it){
   const parent=itemEl.parentElement; if(!parent) return;
   const row=document.createElement('div'); row.className='inline-create';
   const titleInp=document.createElement('input'); titleInp.type='text'; titleInp.className='ic-title'; titleInp.value=it.title;
-  const timeBtn=document.createElement('button'); timeBtn.type='button'; timeBtn.className='ic-time-btn'; timeBtn.textContent='\u{1F550}';
+  const timeBtn=document.createElement('button'); timeBtn.type='button'; timeBtn.className='ic-time-btn'; timeBtn.textContent='\u{1F550}'; timeBtn.title='设置时间点';
   const timeInp=document.createElement('input'); timeInp.type='time'; timeInp.className='ic-time'; timeInp.value=it.anchor.time||'';
   timeInp.style.display = it.anchor.time ? 'inline-block' : 'none';
   row.appendChild(titleInp); row.appendChild(timeBtn); row.appendChild(timeInp);
@@ -628,12 +660,20 @@ function buildRow({label,anchorBase,items,current,weekBoundary,showDate}){
     const lab=document.createElement('div'); lab.className='cell-label'; lab.textContent=label;
     cell.appendChild(lab);
   }
-  const itemsEl=document.createElement('div'); itemsEl.className='cell-items no-scrollbar';
+  const itemsEl=document.createElement('div'); itemsEl.className='row-items';
   cell.appendChild(itemsEl);
   renderItemList(itemsEl,items,{showDate:!!showDate});
   attachCreate(itemsEl,anchorBase);
   makeDropZone(itemsEl,anchorBase);
   return cell;
+}
+/* 空白格默认高度=容器高度/格子数；内容较多的格子自然撑高，其它格子保持默认高度，
+   整个 cell-list 变为可滚动（滚动条已在CSS里隐藏） */
+function equalizeRows(listEl){
+  const rows=Array.from(listEl.children).filter(c=>c.classList.contains('cell'));
+  if(rows.length===0) return;
+  const pct=(100/rows.length)+'%';
+  rows.forEach(r=>{ r.style.minHeight=pct; });
 }
 
 /* =========================================================
@@ -641,18 +681,14 @@ function buildRow({label,anchorBase,items,current,weekBoundary,showDate}){
 ========================================================= */
 function colHeader(colId,name,focusLabel){
   const header=document.createElement('div'); header.className='col-header';
-  header.innerHTML=`
-    <span class="col-name">${name}</span>
-    <button data-act="prev">‹</button>
-    <span class="col-focus">${focusLabel}</span>
-    <button data-act="next">›</button>
-    <button data-act="today">今</button>
-    <button data-act="align" title="让其它列对齐到这里">对齐</button>
-  `;
-  header.querySelector('[data-act="prev"]').onclick=()=>navigate(colId,-1);
-  header.querySelector('[data-act="next"]').onclick=()=>navigate(colId,1);
-  header.querySelector('[data-act="today"]').onclick=()=>jumpToday(colId);
-  header.querySelector('[data-act="align"]').onclick=()=>alignAll(colId);
+  const nameEl=document.createElement('span'); nameEl.className='col-name'; nameEl.textContent=name;
+  const focusEl=document.createElement('span'); focusEl.className='col-focus'; focusEl.textContent=focusLabel;
+  header.appendChild(nameEl);
+  header.appendChild(iconButton('chevron-left','上一页',()=>navigate(colId,-1)));
+  header.appendChild(focusEl);
+  header.appendChild(iconButton('chevron-right','下一页',()=>navigate(colId,1)));
+  header.appendChild(iconButton('crosshair','跳转到今天',()=>jumpToday(colId)));
+  header.appendChild(iconButton('target','让其它列对齐到这里',()=>alignAll(colId)));
   return header;
 }
 
@@ -681,6 +717,7 @@ function renderDayColumn(root){
       current:isCurrentSlot
     }));
   });
+  equalizeRows(list);
   main.appendChild(list);
   root.appendChild(main);
 
@@ -722,6 +759,7 @@ function renderWeekColumn(root){
       current: dayKey===tk
     }));
   }
+  equalizeRows(list);
   main.appendChild(list);
   root.appendChild(main);
 
@@ -802,6 +840,7 @@ function renderMonthColumn(root){
       });
     });
   }
+  equalizeRows(list);
   main.appendChild(list);
   root.appendChild(main);
 
@@ -840,6 +879,7 @@ function renderYearColumn(root){
       current: monthKey===thisMonthKey
     }));
   }
+  equalizeRows(list);
   main.appendChild(list);
   root.appendChild(main);
 
@@ -863,8 +903,7 @@ function renderLifeColumn(root){
   root.appendChild(colHeader('life','Life',centerYear+'年 前后'));
 
   const main=document.createElement('div'); main.className='mainview';
-  const list=document.createElement('div'); list.className='cell-list no-scrollbar';
-  list.style.overflowY='auto';
+  const list=document.createElement('div'); list.className='cell-list';
 
   const loadMoreTop=document.createElement('button'); loadMoreTop.className='life-loadmore'; loadMoreTop.textContent='加载更早的年份';
   loadMoreTop.onclick=()=>{ state.ui.life_span_before=(state.ui.life_span_before||5)+5; saveState(); renderAll(); };
@@ -881,14 +920,13 @@ function renderLifeColumn(root){
       items:itemsForYear(yearKey),
       current: yearKey===thisYearKey
     });
-    row.style.flex='0 0 auto';
-    row.style.minHeight='40px';
     list.appendChild(row);
   }
 
   const loadMoreBottom=document.createElement('button'); loadMoreBottom.className='life-loadmore'; loadMoreBottom.textContent='加载更晚的年份';
   loadMoreBottom.onclick=()=>{ state.ui.life_span_after=(state.ui.life_span_after||5)+5; saveState(); renderAll(); };
   list.appendChild(loadMoreBottom);
+  equalizeRows(list);
 
   main.appendChild(list);
   root.appendChild(main);
@@ -1074,14 +1112,18 @@ function renderAll(){
     COLUMN_RENDERERS[colId](col);
   });
   app.scrollLeft=scrollX;
+  if(window.lucide) lucide.createIcons();
 }
 
 /* =========================================================
    初始化
 ========================================================= */
+document.getElementById('btnExport').appendChild(iconEl('cloud-download'));
 document.getElementById('btnExport').onclick=exportData;
+document.getElementById('btnImport').appendChild(iconEl('cloud-upload'));
 document.getElementById('btnImport').onclick=()=>document.getElementById('fileImport').click();
 document.getElementById('fileImport').onchange=(e)=>{ if(e.target.files[0]) importData(e.target.files[0]); e.target.value=''; };
+document.getElementById('btnSettings').appendChild(iconEl('settings'));
 document.getElementById('btnSettings').onclick=openSettingsModal;
 
 applyTheme();
