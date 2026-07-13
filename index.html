@@ -61,8 +61,10 @@
   .backlog-label{font-size:10px;color:var(--muted);padding:2px 0 3px;text-transform:uppercase;letter-spacing:.5px;}
 
   .mainview{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
-  .mainview .toolbar{flex:0 0 auto;padding:3px 8px;}
-  .mainview .toolbar button{width:100%;font-size:11px;}
+  .mainview .toolbar{flex:0 0 auto;}
+  .mainview .toolbar button{width:100%;height:100%;margin:0;border:none;border-bottom:1px solid var(--border);
+    border-radius:0;padding:6px 8px;font-size:11px;background:var(--bg);}
+  .mainview .toolbar button:hover{background:var(--accent-faint2);color:var(--accent);}
   .cell-list{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow-y:auto;
     scrollbar-width:none;-ms-overflow-style:none;}
   .cell-list::-webkit-scrollbar{display:none;width:0;height:0;}
@@ -81,7 +83,9 @@
   .cell-blank{flex:1 1 auto;min-height:14px;cursor:text;}
   .cell.week-boundary{border-top:2px solid var(--accent);}
 
-  .life-loadmore{flex:0 0 auto;width:100%;font-size:11px;margin:3px 0;}
+  .life-loadmore{flex:0 0 auto;width:100%;margin:0;border:none;border-bottom:1px solid var(--border);
+    border-radius:0;padding:6px 8px;font-size:11px;background:var(--bg);}
+  .life-loadmore:hover{background:var(--accent-faint2);color:var(--accent);}
 
   /* ---------- item ---------- */
   .item{display:flex;align-items:flex-start;gap:5px;padding:1px 2px;border-radius:3px;position:relative;flex:0 0 auto;}
@@ -328,10 +332,12 @@ function applyTheme(){
   const opacity=s.highlightOpacity!=null?s.highlightOpacity:0.16;
   const shadow=darkenHex(bg,0.13);
   const border=mixHex(bg,fg,0.22);
+  const muted=mixHex(bg,fg,0.55);
   const root=document.documentElement.style;
   root.setProperty('--bg',bg);
   root.setProperty('--text',fg);
   root.setProperty('--border',border);
+  root.setProperty('--muted',muted);
   root.setProperty('--accent',accent);
   root.setProperty('--accent-faint',hexToRgba(accent,opacity));
   root.setProperty('--accent-faint2',hexToRgba(accent,opacity/2));
