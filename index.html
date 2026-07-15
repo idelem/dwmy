@@ -77,6 +77,7 @@
   /* ---------- generic row/cell ---------- */
   .cell{flex:0 0 auto;min-height:0;display:flex;flex-direction:column;
     border-bottom:1px solid var(--border);padding:2px 8px;background:transparent;}
+  .cell:last-child{border-bottom:none;}
   .cell.current{background:var(--accent-faint);}
   .cell .cell-label{font-size:10px;color:var(--muted);flex:0 0 auto;display:flex;gap:6px;}
   .cell-blank{flex:1 1 auto;min-height:14px;cursor:text;}
