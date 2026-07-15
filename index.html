@@ -77,11 +77,8 @@
   /* ---------- generic row/cell ---------- */
   .cell{flex:0 0 auto;min-height:0;display:flex;flex-direction:column;
     border-bottom:1px solid var(--border);padding:2px 8px;background:transparent;}
-  .cell:last-child {border-bottom: none;}
   .cell.current{background:var(--accent-faint);}
   .cell .cell-label{font-size:10px;color:var(--muted);flex:0 0 auto;display:flex;gap:6px;}
-  .cell-items{flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;}
-  .row-items{display:block;}
   .cell-blank{flex:1 1 auto;min-height:14px;cursor:text;}
   .cell.week-boundary{border-top:2px solid var(--accent);}
 
@@ -106,6 +103,27 @@
   .item .menu-btn{flex:0 0 auto;opacity:.35;font-size:12px;color:var(--muted);padding:0 3px;border:none;background:none;}
   .item:hover .menu-btn, .item .menu-btn.open{opacity:1;}
   .item .menu-btn:hover{color:var(--accent);}
+  .item .parent-btn{flex:0 0 auto;border:none;background:none;padding:0;margin-top:2px;
+    color:var(--muted);cursor:pointer;display:flex;align-items:center;}
+  .item .parent-btn:hover{color:var(--accent);}
+  .item .parent-btn .lucide{width:12px;height:12px;}
+  .item .child-badge{flex:0 0 auto;border:none;background:none;color:var(--accent);font-size:10px;
+    font-weight:700;padding:1px 3px;margin-top:1px;cursor:pointer;min-width:14px;text-align:center;}
+  .item .child-badge:hover{text-decoration:underline;}
+  .item .unlink-btn{flex:0 0 auto;opacity:.4;border:none;background:none;color:var(--muted);
+    padding:0 3px;display:flex;align-items:center;cursor:pointer;}
+  .item .unlink-btn:hover{opacity:1;color:var(--danger);}
+  .item .unlink-btn .lucide{width:13px;height:13px;}
+
+  .item-menu .mi.icon-mi{display:flex;align-items:center;gap:6px;}
+  .item-menu .mi.icon-mi .lucide{width:13px;height:13px;color:var(--muted);flex:0 0 auto;}
+
+  .subtask-panel{position:fixed;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+    box-shadow:0 4px 16px var(--shadow-a);z-index:1000;min-width:250px;max-width:300px;max-height:360px;
+    overflow-y:auto;padding:2px 8px 6px;}
+  .subtask-panel-header{font-size:11px;color:var(--muted);padding:6px 2px;border-bottom:1px solid var(--border);
+    margin-bottom:2px;}
+  .subtask-panel-empty{padding:8px 2px;font-size:12px;color:var(--muted);}
 
   .lucide{width:14px;height:14px;stroke-width:2;vertical-align:middle;display:block;}
 
@@ -249,7 +267,7 @@ function seedState(s){
   ];
   seed.forEach(it=>{
     const id=makeId();
-    s.items[id]=Object.assign({id,state:it.type==='task'?'todo':null,createdAt:Date.now(),updatedAt:Date.now()},it);
+    s.items[id]=Object.assign({id,state:it.type==='task'?'todo':null,parentId:null,createdAt:Date.now(),updatedAt:Date.now()},it);
   });
   return s;
 }
@@ -266,13 +284,18 @@ function addItem({title,type,level,date,slotIndex,time}){
   state.items[id]={
     id,title,type,
     state:type==='task'?'todo':null,
+    parentId:null,
     anchor:{level,date:date||null,slotIndex:(slotIndex==null?null:slotIndex),time:time||null},
     createdAt:Date.now(),updatedAt:Date.now()
   };
   saveState();
   return id;
 }
-function deleteItem(id){delete state.items[id];saveState();}
+function deleteItem(id){
+  Object.values(state.items).forEach(it=>{ if(it.parentId===id) it.parentId=null; });
+  delete state.items[id];
+  saveState();
+}
 function cycleState(id){
   const it=state.items[id]; if(!it||it.type!=='task')return;
   const order=['todo','started','done'];
@@ -307,6 +330,75 @@ function updateItemTitle(id,title,time){
   it.updatedAt=Date.now(); saveState();
 }
 function isPending(it){ return it.type==='task' && (it.state==='todo'||it.state==='started'); }
+
+/* =========================================================
+   父子任务关系（subtask）
+========================================================= */
+function getChildren(id){
+  return Object.values(state.items).filter(it=>it.parentId===id);
+}
+function countChildren(id){ return getChildren(id).length; }
+function getDescendantIds(id){
+  const result=new Set(); const stack=[id];
+  while(stack.length){
+    const cur=stack.pop();
+    getChildren(cur).forEach(c=>{ if(!result.has(c.id)){ result.add(c.id); stack.push(c.id); } });
+  }
+  return result;
+}
+function setParent(childId,parentId){
+  if(!parentId || childId===parentId) return false;
+  const child=state.items[childId]; const parent=state.items[parentId];
+  if(!child||!parent) return false;
+  if(getDescendantIds(childId).has(parentId)) return false; // 会形成循环引用
+  child.parentId=parentId;
+  child.updatedAt=Date.now();
+  saveState();
+  return true;
+}
+function unlinkFromParent(id){
+  const it=state.items[id]; if(!it) return;
+  it.parentId=null; it.updatedAt=Date.now(); saveState();
+}
+function copyAsChild(sourceId,anchorPatch){
+  const src=state.items[sourceId]; if(!src) return null;
+  const id=makeId();
+  state.items[id]={
+    id, title:src.title, type:src.type,
+    state: src.type==='task' ? 'todo' : null,
+    parentId: sourceId,
+    anchor: Object.assign({},src.anchor,anchorPatch),
+    createdAt:Date.now(), updatedAt:Date.now()
+  };
+  saveState();
+  return id;
+}
+/* 跳转到某个 item 所在的列（用于"跳转到父任务"） */
+function jumpToItem(id){
+  const it=state.items[id]; if(!it) return;
+  const a=it.anchor; const f=state.ui.focus;
+  let colId='life';
+  if(a.level==='slot'||a.level==='day'){ f.day=a.date; colId='day'; }
+  else if(a.level==='week'){ f.week=a.date; colId='week'; }
+  else if(a.level==='month'){ f.month=a.date; colId='month'; }
+  else if(a.level==='year'){ f.year=a.date; colId='year'; }
+  saveState();
+  renderAll();
+  requestAnimationFrame(()=>{
+    const colEl=document.querySelector(`.column[data-col="${colId}"]`);
+    if(colEl) colEl.scrollIntoView({behavior:'smooth',inline:'nearest',block:'nearest'});
+  });
+}
+/* 子任务面板里点击 item：只让 Day 列跳转到那个时间点，面板保持打开 */
+function jumpDayToItem(id){
+  const it=state.items[id]; if(!it) return;
+  const a=it.anchor; let dayKey=null;
+  if(a.level==='slot'||a.level==='day') dayKey=a.date;
+  else if(a.level==='week') dayKey=a.date;
+  else if(a.level==='month') dayKey=a.date+'-01';
+  else if(a.level==='year') dayKey=a.date+'-01-01';
+  if(dayKey){ state.ui.focus.day=dayKey; saveState(); renderAll(); }
+}
 
 function hexToRgba(hex,alpha){
   const [r,g,b]=hexToRgbArr(hex);
@@ -448,6 +540,49 @@ document.addEventListener('click',(e)=>{
   if(!e.target.closest('.item-menu') && !e.target.closest('.menu-btn')) closeItemMenu();
 });
 
+/* 子任务面板：独立于 renderAll 的整体重绘，点击子任务只跳转 Day 列，面板本身不关闭 */
+let openSubtaskPanel=null; // {parentId, el}
+function closeSubtaskPanel(){
+  if(openSubtaskPanel){ openSubtaskPanel.el.remove(); openSubtaskPanel=null; }
+}
+document.addEventListener('click',(e)=>{
+  if(openSubtaskPanel && !e.target.closest('.subtask-panel') && !e.target.closest('.child-badge')){
+    closeSubtaskPanel();
+  }
+});
+function openSubtaskPanelFor(parentId,anchorEl){
+  if(openSubtaskPanel && openSubtaskPanel.parentId===parentId){ closeSubtaskPanel(); return; }
+  closeSubtaskPanel();
+  const panel=document.createElement('div'); panel.className='subtask-panel';
+  document.body.appendChild(panel);
+  const rect=anchorEl.getBoundingClientRect();
+  panel.style.top=(rect.bottom+4)+'px';
+  panel.style.left=Math.min(rect.left,window.innerWidth-300)+'px';
+  openSubtaskPanel={parentId,el:panel};
+  renderSubtaskPanelContent();
+}
+function renderSubtaskPanelContent(){
+  if(!openSubtaskPanel) return;
+  const {parentId,el}=openSubtaskPanel;
+  const parent=state.items[parentId];
+  if(!parent){ closeSubtaskPanel(); return; }
+  el.innerHTML='';
+  const header=document.createElement('div'); header.className='subtask-panel-header';
+  header.textContent='"'+parent.title+'" 的子任务';
+  el.appendChild(header);
+  const children=getChildren(parentId).sort((a,b)=>a.createdAt-b.createdAt);
+  if(children.length===0){
+    const empty=document.createElement('div'); empty.className='subtask-panel-empty'; empty.textContent='暂无子任务';
+    el.appendChild(empty);
+  }else{
+    children.forEach(ch=>{
+      el.appendChild(renderItemEl(ch,{showDate:true,showUnlink:true,onTitleClick:(item)=>jumpDayToItem(item.id)}));
+    });
+  }
+  if(window.lucide) lucide.createIcons();
+}
+function refreshOpenSubtaskPanel(){ if(openSubtaskPanel) renderSubtaskPanelContent(); }
+
 function quickAnchors(){
   const tk=todayKey(); const ws=state.settings.weekStart;
   return [
@@ -488,9 +623,33 @@ function openItemMenu(btn,id){
   delMi.onclick=()=>{ deleteItem(id); closeItemMenu(); renderAll(); };
   menu.appendChild(delMi);
 
+  menu.appendChild(document.createElement('hr'));
+  const copyMi=document.createElement('div'); copyMi.className='mi icon-mi';
+  copyMi.appendChild(iconEl('copy')); copyMi.appendChild(document.createTextNode('复制 ID'));
+  copyMi.onclick=async ()=>{
+    try{ await navigator.clipboard.writeText(id); }catch(e){ alert('无法复制到剪贴板（可能是浏览器权限限制）'); }
+    closeItemMenu();
+  };
+  menu.appendChild(copyMi);
+
+  const pasteMi=document.createElement('div'); pasteMi.className='mi icon-mi';
+  pasteMi.appendChild(iconEl('git-branch-plus')); pasteMi.appendChild(document.createTextNode('粘贴为子任务'));
+  pasteMi.onclick=async ()=>{
+    closeItemMenu();
+    try{
+      const text=(await navigator.clipboard.readText()).trim();
+      if(!text || !state.items[text] || text===id){ alert('剪贴板内容不是有效的任务 ID'); return; }
+      const ok=setParent(text,id);
+      if(!ok) alert('无法关联：会形成循环引用');
+      renderAll();
+    }catch(e){ alert('无法读取剪贴板（可能是浏览器权限限制）'); }
+  };
+  menu.appendChild(pasteMi);
+
   document.body.appendChild(menu);
   openMenuEl=menu;
   btn.classList.add('open');
+  if(window.lucide) lucide.createIcons();
 }
 
 function anchorDateLabel(it){
@@ -508,6 +667,13 @@ function renderItemEl(it,opts){
   el.className='item'+(it.type==='event'?' event':'');
   el.dataset.id=it.id;
   if(it.type==='task') el.dataset.state=it.state;
+
+  if(it.parentId && state.items[it.parentId]){
+    const parentBtn=document.createElement('button'); parentBtn.type='button'; parentBtn.className='parent-btn';
+    parentBtn.title='跳转到父任务'; parentBtn.appendChild(iconEl('git-branch'));
+    parentBtn.onclick=(e)=>{ e.stopPropagation(); jumpToItem(it.parentId); };
+    el.appendChild(parentBtn);
+  }
 
   const cb=document.createElement('div'); cb.className='cb';
   if(it.type==='task'){
@@ -527,8 +693,8 @@ function renderItemEl(it,opts){
   }
 
   const title=document.createElement('div'); title.className='title'; title.textContent=it.title;
-  title.style.cursor='text';
-  title.onclick=(e)=>{ e.stopPropagation(); startInlineEditItem(el,it); };
+  title.style.cursor = opts.onTitleClick ? 'pointer' : 'text';
+  title.onclick=(e)=>{ e.stopPropagation(); if(opts.onTitleClick) opts.onTitleClick(it); else startInlineEditItem(el,it); };
   el.appendChild(title);
 
   if(it.anchor.time){
@@ -536,9 +702,24 @@ function renderItemEl(it,opts){
     el.appendChild(t);
   }
 
+  const childCount=countChildren(it.id);
+  if(childCount>0){
+    const badge=document.createElement('button'); badge.type='button'; badge.className='child-badge';
+    badge.textContent=String(childCount); badge.title='查看子任务';
+    badge.onclick=(e)=>{ e.stopPropagation(); openSubtaskPanelFor(it.id,badge); };
+    el.appendChild(badge);
+  }
+
   const menuBtn=document.createElement('button'); menuBtn.className='menu-btn'; menuBtn.textContent='\u22ee'; menuBtn.title='更多操作';
   menuBtn.onclick=(e)=>{e.stopPropagation();openItemMenu(menuBtn,it.id);};
   el.appendChild(menuBtn);
+
+  if(opts.showUnlink){
+    const unlinkBtn=document.createElement('button'); unlinkBtn.type='button'; unlinkBtn.className='unlink-btn';
+    unlinkBtn.title='解除与父任务的关联'; unlinkBtn.appendChild(iconEl('git-branch-minus'));
+    unlinkBtn.onclick=(e)=>{ e.stopPropagation(); unlinkFromParent(it.id); renderAll(); };
+    el.appendChild(unlinkBtn);
+  }
 
   el.addEventListener('contextmenu',(e)=>{
     e.preventDefault();
@@ -551,7 +732,8 @@ function renderItemList(container,items,opts){
   items.sort((a,b)=>a.createdAt-b.createdAt).forEach(it=>container.appendChild(renderItemEl(it,opts)));
 }
 
-/* 拖拽 */
+/* 拖拽：整个格子(.cell / .currentperiod)都是拖放目标；shift+拖拽到空白=复制为子任务，
+   shift+拖拽到某个已有任务上=建立父子关系；普通拖拽=移动（改锚点） */
 const sortableInstances=[];
 function makeDropZone(el,anchorBase){
   el.dataset.dzLevel=anchorBase.level;
@@ -560,17 +742,39 @@ function makeDropZone(el,anchorBase){
   const s=Sortable.create(el,{
     group:'dwmy',
     animation:150,
-    filter:'.cell-blank,.inline-create',
+    sort:false,
+    filter:'.cell-label,.cell-blank,.inline-create',
     preventOnFilter:false,
     onEnd:function(evt){
       const id=evt.item.dataset.id; if(!id) return;
       const target=evt.to;
+      const oe=evt.originalEvent;
+      const shift=!!(oe && oe.shiftKey);
       const patch={
         level: target.dataset.dzLevel,
         date: target.dataset.dzDate===''?null:target.dataset.dzDate,
         slotIndex: target.dataset.dzSlot===''?null:Number(target.dataset.dzSlot)
       };
-      moveItemToAnchor(id,patch);
+      let landedItemId=null;
+      if(oe){
+        const px = oe.clientX!=null ? oe.clientX : (oe.changedTouches && oe.changedTouches[0] && oe.changedTouches[0].clientX);
+        const py = oe.clientY!=null ? oe.clientY : (oe.changedTouches && oe.changedTouches[0] && oe.changedTouches[0].clientY);
+        if(px!=null && py!=null){
+          const under=document.elementFromPoint(px,py);
+          const itemEl=under && under.closest('.item');
+          if(itemEl && itemEl!==evt.item && itemEl.dataset.id) landedItemId=itemEl.dataset.id;
+        }
+      }
+      if(shift){
+        if(landedItemId){
+          const ok=setParent(id,landedItemId);
+          if(!ok) alert('无法关联：会形成循环引用');
+        }else{
+          copyAsChild(id,patch);
+        }
+      }else{
+        moveItemToAnchor(id,patch);
+      }
       renderAll();
     }
   });
@@ -674,18 +878,16 @@ function renderBacklog(container,items){
   renderItemList(container,items,{showDate:true});
 }
 
-/* 生成一个"行"：label + items容器(可拖拽/可新建) */
+/* 生成一个"行"：整个 cell 本身就是可拖放/可点击新建的区域 */
 function buildRow({label,anchorBase,items,current,weekBoundary,showDate}){
   const cell=document.createElement('div'); cell.className='cell'+(current?' current':'')+(weekBoundary?' week-boundary':'');
   if(label!=null){
     const lab=document.createElement('div'); lab.className='cell-label'; lab.textContent=label;
     cell.appendChild(lab);
   }
-  const itemsEl=document.createElement('div'); itemsEl.className='row-items';
-  cell.appendChild(itemsEl);
-  renderItemList(itemsEl,items,{showDate:!!showDate});
-  attachCreate(itemsEl,anchorBase);
-  makeDropZone(itemsEl,anchorBase);
+  renderItemList(cell,items,{showDate:!!showDate});
+  attachCreate(cell,anchorBase);
+  makeDropZone(cell,anchorBase);
   return cell;
 }
 /* 空白格默认高度=容器高度/格子数；内容较多的格子自然撑高，其它格子保持默认高度，
@@ -746,8 +948,7 @@ function renderDayColumn(root){
   const cp=document.createElement('div'); cp.className='currentperiod no-scrollbar';
   const cpLabel=document.createElement('div'); cpLabel.className='cp-label'; cpLabel.textContent='当日';
   cp.appendChild(cpLabel);
-  const cpItems=document.createElement('div'); cpItems.className='cell-items';
-  cp.appendChild(cpItems);
+  const cpItems=cp;
   renderItemList(cpItems,itemsForDay(focus));
   attachCreate(cpItems,{level:'day',date:focus,slotIndex:null});
   makeDropZone(cpItems,{level:'day',date:focus,slotIndex:null});
@@ -788,8 +989,7 @@ function renderWeekColumn(root){
   const cp=document.createElement('div'); cp.className='currentperiod no-scrollbar';
   const cpLabel=document.createElement('div'); cpLabel.className='cp-label'; cpLabel.textContent='本周';
   cp.appendChild(cpLabel);
-  const cpItems=document.createElement('div'); cpItems.className='cell-items';
-  cp.appendChild(cpItems);
+  const cpItems=cp;
   renderItemList(cpItems,itemsForWeek(weekStart));
   attachCreate(cpItems,{level:'week',date:weekStart,slotIndex:null});
   makeDropZone(cpItems,{level:'week',date:weekStart,slotIndex:null});
@@ -866,8 +1066,7 @@ function renderMonthColumn(root){
   const cp=document.createElement('div'); cp.className='currentperiod no-scrollbar';
   const cpLabel=document.createElement('div'); cpLabel.className='cp-label'; cpLabel.textContent='本月';
   cp.appendChild(cpLabel);
-  const cpItems=document.createElement('div'); cpItems.className='cell-items';
-  cp.appendChild(cpItems);
+  const cpItems=cp;
   renderItemList(cpItems,itemsForMonth(focus));
   attachCreate(cpItems,{level:'month',date:focus,slotIndex:null});
   makeDropZone(cpItems,{level:'month',date:focus,slotIndex:null});
@@ -905,8 +1104,7 @@ function renderYearColumn(root){
   const cp=document.createElement('div'); cp.className='currentperiod no-scrollbar';
   const cpLabel=document.createElement('div'); cpLabel.className='cp-label'; cpLabel.textContent='今年';
   cp.appendChild(cpLabel);
-  const cpItems=document.createElement('div'); cpItems.className='cell-items';
-  cp.appendChild(cpItems);
+  const cpItems=cp;
   renderItemList(cpItems,itemsForYear(focus));
   attachCreate(cpItems,{level:'year',date:focus,slotIndex:null});
   makeDropZone(cpItems,{level:'year',date:focus,slotIndex:null});
@@ -953,8 +1151,7 @@ function renderLifeColumn(root){
   const cp=document.createElement('div'); cp.className='currentperiod no-scrollbar';
   const cpLabel=document.createElement('div'); cpLabel.className='cp-label'; cpLabel.textContent='终生';
   cp.appendChild(cpLabel);
-  const cpItems=document.createElement('div'); cpItems.className='cell-items';
-  cp.appendChild(cpItems);
+  const cpItems=cp;
   renderItemList(cpItems,itemsForLife());
   attachCreate(cpItems,{level:'life',date:null,slotIndex:null});
   makeDropZone(cpItems,{level:'life',date:null,slotIndex:null});
@@ -1133,6 +1330,7 @@ function renderAll(){
   });
   app.scrollLeft=scrollX;
   if(window.lucide) lucide.createIcons();
+  refreshOpenSubtaskPanel();
 }
 
 /* =========================================================
