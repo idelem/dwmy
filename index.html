@@ -130,6 +130,51 @@
     margin-bottom:2px;}
   .subtask-panel-empty{padding:8px 2px;font-size:12px;color:var(--muted);}
 
+  /* ---------- 反面：Someday / list 瀑布流 ---------- */
+  .someday-col{flex:1 1 300px;}
+  .someday-body{flex:1 1 auto;overflow-y:auto;padding:4px 8px;display:flex;flex-direction:column;
+    scrollbar-width:none;-ms-overflow-style:none;}
+  .someday-body::-webkit-scrollbar{display:none;width:0;height:0;}
+
+  .masonry-wrap{flex:1 1 auto;display:flex;overflow-y:auto;min-width:0;
+    scrollbar-width:none;-ms-overflow-style:none;}
+  .masonry-wrap::-webkit-scrollbar{display:none;width:0;height:0;}
+  .masonry-col{flex:1 1 0;display:flex;flex-direction:column;padding:6px;gap:8px;min-width:0;}
+
+  .list-card{border:1px solid var(--border);background:var(--bg);display:flex;flex-direction:column;flex:0 0 auto;}
+  .list-card-header{display:flex;align-items:center;gap:4px;padding:4px 4px 4px 8px;border-bottom:1px solid var(--border);}
+  .list-name{font-weight:700;font-size:13px;cursor:pointer;flex:1 1 auto;word-break:break-word;}
+  .list-name-input{flex:1 1 auto;font-weight:700;font-size:13px;}
+  .list-card-actions{display:flex;flex:0 0 auto;}
+  .list-card-actions button{border:none;background:none;padding:2px 4px;color:var(--muted);border-radius:0;margin:0;}
+  .list-card-actions button:hover{color:var(--accent);}
+  .list-card-actions .lucide{width:13px;height:13px;}
+  .list-card-body{padding:2px 6px 6px;display:flex;flex-direction:column;}
+
+  .add-list-btn{width:100%;height:100%;min-height:56px;border:1px dashed var(--border);background:transparent;
+    padding:16px 8px;color:var(--muted);border-radius:0;margin:0;}
+  .add-list-btn:hover{color:var(--accent);border-color:var(--accent);}
+
+  .hash-badge{flex:0 0 auto;border:none;background:none;color:var(--accent);padding:0 2px;margin-top:2px;
+    cursor:pointer;display:flex;align-items:center;}
+  .hash-badge:hover{opacity:.7;}
+  .hash-badge .lucide{width:13px;height:13px;}
+
+  @keyframes flash-bg{0%{background:var(--accent-faint);}100%{background:transparent;}}
+  .flash-highlight{animation:flash-bg 1.6s ease;}
+
+  .search-results{max-height:240px;overflow-y:auto;margin:8px 0;border:1px solid var(--border);}
+  .search-result-row{display:flex;align-items:center;gap:6px;padding:4px 6px;font-size:13px;border-bottom:1px solid var(--border);}
+  .search-result-row:last-child{border-bottom:none;}
+
+  /* ---------- 折角翻页按钮 ---------- */
+  #flipBtn{position:fixed;right:0;bottom:0;width:34px;height:34px;cursor:pointer;z-index:1500;}
+  #flipBtn .tri-a{position:absolute;inset:0;background:var(--bg);border:1px solid var(--border);
+    clip-path:polygon(0 0,100% 0,0 100%);}
+  #flipBtn .tri-b{position:absolute;inset:0;background:var(--text);
+    clip-path:polygon(100% 0,100% 100%,0 100%);}
+  #flipBtn:hover{opacity:.85;}
+
   .lucide{width:14px;height:14px;stroke-width:2;vertical-align:middle;display:block;}
 
   /* ---------- inline create ---------- */
@@ -174,6 +219,10 @@
 </div>
 
 <div id="app"></div>
+<div id="flipBtn" title="翻到反面/正面">
+  <div class="tri-a"></div>
+  <div class="tri-b"></div>
+</div>
 
 <script>
 /* =========================================================
@@ -249,17 +298,26 @@ function defaultState(){
     version:1,
     settings:defaultSettings(),
     items:{},
-    ui:{ focus:{ day:tk, week:tk, month:monthKeyOf(tk), year:yearKeyOf(tk), life:yearKeyOf(tk) } }
+    lists:{},
+    listOrder:[],
+    ui:{ side:'front', focus:{ day:tk, week:tk, month:monthKeyOf(tk), year:yearKeyOf(tk), life:yearKeyOf(tk) } }
   };
 }
 let state=loadState();
+function migrateState(s){
+  if(!s.lists) s.lists={};
+  if(!s.listOrder) s.listOrder=[];
+  if(!s.ui) s.ui={focus:{day:todayKey(),week:todayKey(),month:monthKeyOf(todayKey()),year:yearKeyOf(todayKey()),life:yearKeyOf(todayKey())}};
+  if(!s.ui.side) s.ui.side='front';
+  return s;
+}
 function loadState(){
   try{
     const raw=localStorage.getItem(STORAGE_KEY);
     if(!raw) return seedState(defaultState());
     const parsed=JSON.parse(raw);
     if(!parsed.version) return seedState(defaultState());
-    return parsed;
+    return migrateState(parsed);
   }catch(e){ console.error('load failed',e); return seedState(defaultState()); }
 }
 function seedState(s){
@@ -274,7 +332,7 @@ function seedState(s){
   ];
   seed.forEach(it=>{
     const id=makeId();
-    s.items[id]=Object.assign({id,state:it.type==='task'?'todo':null,parentId:null,createdAt:Date.now(),updatedAt:Date.now()},it);
+    s.items[id]=Object.assign({id,state:it.type==='task'?'todo':null,parentId:null,listIds:[],createdAt:Date.now(),updatedAt:Date.now()},it);
   });
   return s;
 }
@@ -292,6 +350,7 @@ function addItem({title,type,level,date,slotIndex,time}){
     id,title,type,
     state:type==='task'?'todo':null,
     parentId:null,
+    listIds:[],
     anchor:{level,date:date||null,slotIndex:(slotIndex==null?null:slotIndex),time:time||null},
     createdAt:Date.now(),updatedAt:Date.now()
   };
@@ -407,6 +466,114 @@ function jumpDayToItem(id){
   if(dayKey){ state.ui.focus.day=dayKey; saveState(); renderAll(); }
 }
 
+/* =========================================================
+   反面：list（多对多归属）
+========================================================= */
+function getListsForItem(item){
+  return (item.listIds||[]).map(lid=>state.lists[lid]).filter(Boolean);
+}
+function getItemsForList(listId){
+  return Object.values(state.items).filter(it=>(it.listIds||[]).includes(listId));
+}
+function addItemToList(itemId,listId){
+  const it=state.items[itemId]; if(!it||!state.lists[listId]) return;
+  it.listIds=it.listIds||[];
+  if(!it.listIds.includes(listId)) it.listIds.push(listId);
+  it.updatedAt=Date.now(); saveState();
+}
+function removeItemFromList(itemId,listId){
+  const it=state.items[itemId]; if(!it) return;
+  it.listIds=(it.listIds||[]).filter(id=>id!==listId);
+  it.updatedAt=Date.now(); saveState();
+}
+function createList(name){
+  const id=makeId();
+  state.lists[id]={id,name:name||'新建列表',pinned:false,createdAt:Date.now()};
+  state.listOrder.push(id);
+  saveState();
+  return id;
+}
+function deleteList(id){
+  Object.values(state.items).forEach(it=>{ if(it.listIds) it.listIds=it.listIds.filter(l=>l!==id); });
+  delete state.lists[id];
+  state.listOrder=state.listOrder.filter(l=>l!==id);
+  saveState();
+}
+function renameList(id,name){
+  const l=state.lists[id]; if(!l) return;
+  l.name=name; saveState();
+}
+function toggleListPin(id){
+  const l=state.lists[id]; if(!l) return;
+  l.pinned=!l.pinned; saveState();
+}
+function moveListInOrder(id,beforeId){
+  const arr=state.listOrder;
+  const idx=arr.indexOf(id); if(idx===-1) return;
+  arr.splice(idx,1);
+  if(beforeId && beforeId!==id){
+    const bi=arr.indexOf(beforeId);
+    arr.splice(bi===-1?arr.length:bi,0,id);
+  }else{
+    arr.push(id);
+  }
+  saveState();
+}
+function getOrderedLists(){
+  const pinned=[], unpinned=[];
+  state.listOrder.forEach(id=>{
+    const l=state.lists[id]; if(!l) return;
+    (l.pinned?pinned:unpinned).push(l);
+  });
+  return pinned.concat(unpinned);
+}
+async function copyListId(listId){
+  try{ await navigator.clipboard.writeText(listId); }
+  catch(e){ alert('无法复制到剪贴板（可能是浏览器权限限制）'); }
+}
+async function pasteTaskIdToList(listId){
+  try{
+    const text=(await navigator.clipboard.readText()).trim();
+    if(!text || !state.items[text]){ alert('剪贴板内容不是有效的任务 ID'); return; }
+    addItemToList(text,listId);
+    renderAll();
+  }catch(e){ alert('无法读取剪贴板（可能是浏览器权限限制）'); }
+}
+function jumpToList(listId){
+  state.ui.side='back';
+  saveState();
+  renderAll();
+  requestAnimationFrame(()=>{
+    const cardEl=document.querySelector(`.list-card[data-list-id="${listId}"]`);
+    if(cardEl){
+      cardEl.scrollIntoView({behavior:'smooth',block:'nearest',inline:'nearest'});
+      cardEl.classList.add('flash-highlight');
+      cardEl.addEventListener('animationend',()=>cardEl.classList.remove('flash-highlight'),{once:true});
+    }
+  });
+}
+function handleHashClick(itemId,anchorEl){
+  const lists=getListsForItem(state.items[itemId]);
+  if(lists.length===0) return;
+  if(lists.length===1){ jumpToList(lists[0].id); }
+  else{ openListChooserMenu(lists,anchorEl); }
+}
+function openListChooserMenu(lists,anchorEl){
+  closeItemMenu();
+  const menu=document.createElement('div'); menu.className='item-menu';
+  const rect=anchorEl.getBoundingClientRect();
+  menu.style.top=(rect.bottom+4)+'px';
+  menu.style.left=Math.min(rect.left,window.innerWidth-180)+'px';
+  lists.forEach(l=>{
+    const mi=document.createElement('div'); mi.className='mi'; mi.textContent=l.name;
+    mi.onclick=()=>{ closeItemMenu(); jumpToList(l.id); };
+    menu.appendChild(mi);
+  });
+  document.body.appendChild(menu);
+  openMenuEl=menu;
+  anchorEl.classList.add('open');
+}
+
 function hexToRgba(hex,alpha){
   const [r,g,b]=hexToRgbArr(hex);
   return `rgba(${r},${g},${b},${alpha})`;
@@ -465,7 +632,7 @@ function createItemSmart(anchorBase,title,time,type){
     const slot=findSlotForTime(time);
     if(slot!==-1){ level='slot'; slotIndex=slot; }
   }
-  addItem({title,type:type||'task',level,date,slotIndex,time});
+  return addItem({title,type:type||'task',level,date,slotIndex,time});
 }
 
 /* =========================================================
@@ -509,7 +676,7 @@ function getWeekBacklog(){
   const thisMonthFirst=monthKeyOf(tk)+'-01';
   return Object.values(state.items).filter(it=>{
     if(!isPending(it))return false;
-    if(it.anchor.level==='month'||it.anchor.level==='year'||it.anchor.level==='life')return false;
+    if(it.anchor.level==='month'||it.anchor.level==='year'||it.anchor.level==='life'||it.anchor.level==='someday')return false;
     const itemWeekStart=getWeekStartKey(it.anchor.date,ws);
     return itemWeekStart<thisWeekStart && itemWeekStart>=thisMonthFirst;
   });
@@ -520,7 +687,7 @@ function getMonthBacklog(){
   const thisYearFirstMonth=yearKeyOf(tk)+'-01';
   return Object.values(state.items).filter(it=>{
     if(!isPending(it))return false;
-    if(it.anchor.level==='year'||it.anchor.level==='life')return false;
+    if(it.anchor.level==='year'||it.anchor.level==='life'||it.anchor.level==='someday')return false;
     let itemMonthKey = it.anchor.level==='month' ? it.anchor.date : monthKeyOf(it.anchor.date);
     return itemMonthKey<thisMonthKey && itemMonthKey>=thisYearFirstMonth;
   });
@@ -529,7 +696,7 @@ function getYearBacklog(){
   const thisYearKey=yearKeyOf(todayKey());
   return Object.values(state.items).filter(it=>{
     if(!isPending(it))return false;
-    if(it.anchor.level==='life')return false;
+    if(it.anchor.level==='life'||it.anchor.level==='someday')return false;
     let itemYearKey = it.anchor.level==='year' ? it.anchor.date : yearKeyOf(it.anchor.level==='month'?(it.anchor.date+'-01'):it.anchor.date);
     return itemYearKey<thisYearKey;
   });
@@ -597,10 +764,11 @@ function quickAnchors(){
     {label:'Week · 本周',anchor:{level:'week',date:getWeekStartKey(tk,ws),slotIndex:null}},
     {label:'Month · 本月',anchor:{level:'month',date:monthKeyOf(tk),slotIndex:null}},
     {label:'Year · 今年',anchor:{level:'year',date:yearKeyOf(tk),slotIndex:null}},
-    {label:'Life · 终生',anchor:{level:'life',date:null,slotIndex:null}}
+    {label:'Life · 终生',anchor:{level:'life',date:null,slotIndex:null}},
+    {label:'Someday（去除时间）',anchor:{level:'someday',date:null,slotIndex:null,time:null}}
   ];
 }
-function openItemMenu(btn,id){
+function openItemMenu(btn,id,listContext){
   closeItemMenu();
   const menu=document.createElement('div'); menu.className='item-menu';
   const rect=btn.getBoundingClientRect();
@@ -625,6 +793,12 @@ function openItemMenu(btn,id){
     cancelMi.textContent = it.state==='canceled' ? '取消「已取消」标记' : '标记为已取消';
     cancelMi.onclick=()=>{ setCanceled(id); closeItemMenu(); renderAll(); };
     menu.appendChild(cancelMi);
+  }
+  if(listContext){
+    const removeMi=document.createElement('div'); removeMi.className='mi';
+    removeMi.textContent='从此 list 移除';
+    removeMi.onclick=()=>{ removeItemFromList(id,listContext); closeItemMenu(); renderAll(); };
+    menu.appendChild(removeMi);
   }
   const delMi=document.createElement('div'); delMi.className='mi'; delMi.style.color='var(--danger)'; delMi.textContent='删除';
   delMi.onclick=()=>{ deleteItem(id); closeItemMenu(); renderAll(); };
@@ -652,6 +826,19 @@ function openItemMenu(btn,id){
     }catch(e){ alert('无法读取剪贴板（可能是浏览器权限限制）'); }
   };
   menu.appendChild(pasteMi);
+
+  const pasteListMi=document.createElement('div'); pasteListMi.className='mi icon-mi';
+  pasteListMi.appendChild(iconEl('list-plus')); pasteListMi.appendChild(document.createTextNode('粘贴 list ID（加入该 list）'));
+  pasteListMi.onclick=async ()=>{
+    closeItemMenu();
+    try{
+      const text=(await navigator.clipboard.readText()).trim();
+      if(!text || !state.lists[text]){ alert('剪贴板内容不是有效的 list ID'); return; }
+      addItemToList(id,text);
+      renderAll();
+    }catch(e){ alert('无法读取剪贴板（可能是浏览器权限限制）'); }
+  };
+  menu.appendChild(pasteListMi);
 
   document.body.appendChild(menu);
   openMenuEl=menu;
@@ -718,8 +905,15 @@ function renderItemEl(it,opts){
   el.appendChild(cb);
 
   if(opts.showDate){
-    const db=document.createElement('div'); db.className='date-badge'; db.textContent=anchorDateLabel(it);
-    el.appendChild(db);
+    const label=anchorDateLabel(it);
+    if(label){
+      const db=document.createElement('div'); db.className='date-badge'; db.textContent=label;
+      el.appendChild(db);
+    }
+    if(it.anchor.time){
+      const t=document.createElement('div'); t.className='time'; t.textContent=formatTime(it.anchor.time);
+      el.appendChild(t);
+    }
   }
 
   const title=document.createElement('div'); title.className='title'; title.innerHTML=renderInlineMarkdown(it.title);
@@ -731,7 +925,7 @@ function renderItemEl(it,opts){
   };
   el.appendChild(title);
 
-  if(it.anchor.time){
+  if(!opts.showDate && it.anchor.time){
     const t=document.createElement('div'); t.className='time'; t.textContent=formatTime(it.anchor.time);
     el.appendChild(t);
   }
@@ -745,7 +939,7 @@ function renderItemEl(it,opts){
   }
 
   const menuBtn=document.createElement('button'); menuBtn.className='menu-btn'; menuBtn.textContent='\u22ee'; menuBtn.title='更多操作';
-  menuBtn.onclick=(e)=>{e.stopPropagation();openItemMenu(menuBtn,it.id);};
+  menuBtn.onclick=(e)=>{e.stopPropagation();openItemMenu(menuBtn,it.id,opts.listContext);};
   el.appendChild(menuBtn);
 
   if(opts.showUnlink){
@@ -753,6 +947,13 @@ function renderItemEl(it,opts){
     unlinkBtn.title='解除与父任务的关联'; unlinkBtn.appendChild(iconEl('git-branch-minus'));
     unlinkBtn.onclick=(e)=>{ e.stopPropagation(); unlinkFromParent(it.id); renderAll(); };
     el.appendChild(unlinkBtn);
+  }
+
+  if((it.listIds||[]).length>0){
+    const hashBtn=document.createElement('button'); hashBtn.type='button'; hashBtn.className='hash-badge';
+    hashBtn.title='查看所属 list'; hashBtn.appendChild(iconEl('hash'));
+    hashBtn.onclick=(e)=>{ e.stopPropagation(); handleHashClick(it.id,hashBtn); };
+    el.appendChild(hashBtn);
   }
 
   el.addEventListener('contextmenu',(e)=>{
@@ -824,7 +1025,8 @@ function autoResizeTextarea(ta){
   ta.style.height='auto';
   ta.style.height=ta.scrollHeight+'px';
 }
-function startInlineCreate(itemsEl,anchorBase){
+function startInlineCreate(itemsEl,anchorBase,opts){
+  opts=opts||{};
   if(itemsEl.querySelector('.inline-create')){ itemsEl.querySelector('.ic-title').focus(); return; }
   const row=document.createElement('div'); row.className='inline-create';
   row.innerHTML=`
@@ -847,7 +1049,10 @@ function startInlineCreate(itemsEl,anchorBase){
   function commit(){
     if(committed) return; committed=true;
     const title=titleInp.value.trim();
-    if(title) createItemSmart(anchorBase,title,timeInp.value||null);
+    if(title){
+      const newId=createItemSmart(anchorBase,title,timeInp.value||null);
+      if(opts.afterCreate) opts.afterCreate(newId);
+    }
     renderAll();
   }
   titleInp.addEventListener('input',()=>autoResizeTextarea(titleInp));
@@ -905,9 +1110,9 @@ function startInlineEditItem(itemEl,it){
   titleInp.focus();
   titleInp.select();
 }
-function attachCreate(itemsEl,anchorBase){
+function attachCreate(itemsEl,anchorBase,opts){
   const blank=document.createElement('div'); blank.className='cell-blank';
-  blank.onclick=(e)=>{ if(e.target===blank) startInlineCreate(itemsEl,anchorBase); };
+  blank.onclick=(e)=>{ if(e.target===blank) startInlineCreate(itemsEl,anchorBase,opts); };
   itemsEl.appendChild(blank);
 }
 
@@ -1201,6 +1406,185 @@ function renderLifeColumn(root){
 }
 
 /* =========================================================
+   反面：Someday 列 + list 瀑布流
+========================================================= */
+function renderSomedayColumn(root){
+  root.innerHTML='';
+  const header=document.createElement('div'); header.className='col-header';
+  const nameEl=document.createElement('span'); nameEl.className='col-name'; nameEl.textContent='Someday';
+  header.appendChild(nameEl);
+  root.appendChild(header);
+
+  const body=document.createElement('div'); body.className='someday-body no-scrollbar';
+  const items=Object.values(state.items).filter(it=>it.anchor.level==='someday' && (!it.listIds||it.listIds.length===0));
+  renderItemList(body,items);
+  attachCreate(body,{level:'someday',date:null,slotIndex:null});
+  makeDropZone(body,{level:'someday',date:null,slotIndex:null});
+  root.appendChild(body);
+}
+
+function startRenameList(listId,nameEl){
+  const list=state.lists[listId]; if(!list) return;
+  const input=document.createElement('input'); input.type='text'; input.className='list-name-input'; input.value=list.name;
+  nameEl.replaceWith(input);
+  input.focus(); input.select();
+  let committed=false;
+  function commit(){
+    if(committed) return; committed=true;
+    const v=input.value.trim();
+    renameList(listId, v||'未命名');
+    renderAll();
+  }
+  input.addEventListener('keydown',(e)=>{
+    if(e.key==='Enter'){ e.preventDefault(); commit(); }
+    else if(e.key==='Escape'){ committed=true; renderAll(); }
+  });
+  input.addEventListener('blur',()=>{ setTimeout(commit,100); });
+}
+
+function openListSearchModal(listId){
+  const mask=document.createElement('div'); mask.className='modal-mask';
+  const modal=document.createElement('div'); modal.className='modal';
+  modal.innerHTML=`
+    <h3>搜索任务加入 list</h3>
+    <div class="row"><input id="searchInput" type="text" placeholder="输入关键词搜索标题" style="flex:1 1 auto;"></div>
+    <div id="searchResults" class="search-results"></div>
+    <div class="actions">
+      <button id="searchCancel">关闭</button>
+      <button id="searchAdd" class="primary">加入所选</button>
+    </div>
+  `;
+  mask.appendChild(modal); document.body.appendChild(mask);
+  const $=(sel)=>modal.querySelector(sel);
+  const input=$('#searchInput');
+  const resultsEl=$('#searchResults');
+  const selected=new Set();
+
+  function renderResults(){
+    const q=input.value.trim().toLowerCase();
+    resultsEl.innerHTML='';
+    if(!q) return;
+    const matches=Object.values(state.items).filter(it=>it.title.toLowerCase().includes(q)).slice(0,50);
+    matches.forEach(it=>{
+      const row=document.createElement('label'); row.className='search-result-row';
+      const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=selected.has(it.id);
+      cb.onchange=()=>{ if(cb.checked) selected.add(it.id); else selected.delete(it.id); };
+      row.appendChild(cb);
+      const span=document.createElement('span'); span.textContent=it.title;
+      row.appendChild(span);
+      resultsEl.appendChild(row);
+    });
+  }
+  input.addEventListener('input',renderResults);
+  $('#searchCancel').onclick=()=>mask.remove();
+  mask.addEventListener('click',(e)=>{ if(e.target===mask) mask.remove(); });
+  $('#searchAdd').onclick=()=>{
+    selected.forEach(id=>addItemToList(id,listId));
+    mask.remove();
+    renderAll();
+  };
+  input.focus();
+}
+
+function renderListCard(list){
+  const card=document.createElement('div'); card.className='list-card'; card.dataset.listId=list.id;
+
+  const header=document.createElement('div'); header.className='list-card-header';
+  const nameEl=document.createElement('div'); nameEl.className='list-name'; nameEl.textContent=list.name; nameEl.title='点击重命名';
+  nameEl.onclick=(e)=>{ e.stopPropagation(); startRenameList(list.id,nameEl); };
+  header.appendChild(nameEl);
+
+  const btns=document.createElement('div'); btns.className='list-card-actions';
+  const pinBtn=iconButton(list.pinned?'pin-off':'pin', list.pinned?'取消置顶':'置顶', ()=>{ toggleListPin(list.id); renderAll(); });
+  const searchBtn=iconButton('search','搜索并添加任务', ()=>openListSearchModal(list.id));
+  const pasteBtn=iconButton('clipboard-paste','粘贴任务ID加入此list', ()=>pasteTaskIdToList(list.id));
+  const copyBtn=iconButton('copy','复制此list的ID', ()=>copyListId(list.id));
+  const delBtn=iconButton('trash-2','删除此list', ()=>{ deleteList(list.id); renderAll(); });
+  [pinBtn,searchBtn,pasteBtn,copyBtn,delBtn].forEach(b=>btns.appendChild(b));
+  header.appendChild(btns);
+  card.appendChild(header);
+
+  const body=document.createElement('div'); body.className='list-card-body';
+  const items=getItemsForList(list.id);
+  renderItemList(body,items,{showDate:true,listContext:list.id});
+  card.appendChild(body);
+  attachCreate(body,{level:'someday',date:null,slotIndex:null},{afterCreate:(newId)=>addItemToList(newId,list.id)});
+
+  return card;
+}
+
+/* 简化版瀑布流：用"list里任务数量"估算高度，把list依次分配到当前最短的列 */
+function estimateListHeight(list){
+  const HEADER=34, ROW=24, PAD=16;
+  const count = list.isAddButton ? 0 : getItemsForList(list.id).length;
+  if(list.isAddButton) return 60;
+  return HEADER + Math.max(count,0)*ROW + PAD;
+}
+function layoutMasonry(flowItems,colCount){
+  const heights=new Array(colCount).fill(0);
+  const columns=Array.from({length:colCount},()=>[]);
+  flowItems.forEach(item=>{
+    let minIdx=0;
+    for(let i=1;i<colCount;i++) if(heights[i]<heights[minIdx]) minIdx=i;
+    columns[minIdx].push(item);
+    heights[minIdx]+=estimateListHeight(item);
+  });
+  return columns;
+}
+function setupListSortable(colEl){
+  const s=Sortable.create(colEl,{
+    group:'dwmy-lists',
+    animation:150,
+    draggable:'.list-card',
+    filter:'.add-list-btn',
+    preventOnFilter:false,
+    onEnd:function(evt){
+      const id=evt.item.dataset.listId; if(!id) return;
+      const nextEl=evt.item.nextElementSibling;
+      const beforeId = nextEl && nextEl.classList.contains('list-card') ? nextEl.dataset.listId : null;
+      moveListInOrder(id,beforeId);
+      renderAll();
+    }
+  });
+  sortableInstances.push(s);
+}
+
+function renderBackSide(app){
+  const somedayCol=document.createElement('div'); somedayCol.className='column someday-col'; somedayCol.dataset.col='someday';
+  renderSomedayColumn(somedayCol);
+  app.appendChild(somedayCol);
+
+  const flowWrap=document.createElement('div'); flowWrap.className='masonry-wrap';
+  const ordered=getOrderedLists();
+  const flowItems=ordered.concat([{isAddButton:true}]);
+  const COLS=4;
+  const columns=layoutMasonry(flowItems,COLS);
+  columns.forEach(colItems=>{
+    const colEl=document.createElement('div'); colEl.className='masonry-col';
+    colItems.forEach(it=>{
+      if(it.isAddButton){
+        const addBtn=document.createElement('button'); addBtn.type='button'; addBtn.className='add-list-btn';
+        addBtn.textContent='+ 新建 list';
+        addBtn.onclick=()=>{
+          const newId=createList('新建列表');
+          renderAll();
+          requestAnimationFrame(()=>{
+            const el=document.querySelector(`.list-card[data-list-id="${newId}"] .list-name`);
+            if(el) startRenameList(newId,el);
+          });
+        };
+        colEl.appendChild(addBtn);
+      }else{
+        colEl.appendChild(renderListCard(it));
+      }
+    });
+    flowWrap.appendChild(colEl);
+    setupListSortable(colEl);
+  });
+  app.appendChild(flowWrap);
+}
+
+/* =========================================================
    列导航
 ========================================================= */
 function navigate(colId,dir){
@@ -1350,7 +1734,7 @@ function importData(file){
       const parsed=JSON.parse(reader.result);
       if(!parsed.items || !parsed.settings){ alert('文件格式不正确'); return; }
       state=parsed;
-      if(!state.ui) state.ui={focus:{day:todayKey(),week:todayKey(),month:monthKeyOf(todayKey()),year:yearKeyOf(todayKey()),life:yearKeyOf(todayKey())}};
+      migrateState(state);
       applyTheme();
       saveState(); renderAll();
     }catch(e){ alert('导入失败：'+e.message); }
@@ -1370,14 +1754,24 @@ function renderAll(){
   const app=document.getElementById('app');
   const scrollX=app.scrollLeft;
   app.innerHTML='';
-  COLUMN_ORDER.forEach(colId=>{
-    const col=document.createElement('div'); col.className='column'; col.dataset.col=colId;
-    app.appendChild(col);
-    COLUMN_RENDERERS[colId](col);
-  });
+  if(state.ui.side==='back'){
+    renderBackSide(app);
+  }else{
+    COLUMN_ORDER.forEach(colId=>{
+      const col=document.createElement('div'); col.className='column'; col.dataset.col=colId;
+      app.appendChild(col);
+      COLUMN_RENDERERS[colId](col);
+    });
+  }
   app.scrollLeft=scrollX;
   if(window.lucide) lucide.createIcons();
   refreshOpenSubtaskPanel();
+}
+function toggleSide(){
+  closeSubtaskPanel();
+  state.ui.side = state.ui.side==='back' ? 'front' : 'back';
+  saveState();
+  renderAll();
 }
 
 /* =========================================================
@@ -1390,6 +1784,7 @@ document.getElementById('btnImport').onclick=()=>document.getElementById('fileIm
 document.getElementById('fileImport').onchange=(e)=>{ if(e.target.files[0]) importData(e.target.files[0]); e.target.value=''; };
 document.getElementById('btnSettings').appendChild(iconEl('settings'));
 document.getElementById('btnSettings').onclick=openSettingsModal;
+document.getElementById('flipBtn').onclick=toggleSide;
 
 applyTheme();
 renderAll();
