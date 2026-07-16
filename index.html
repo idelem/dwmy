@@ -100,6 +100,10 @@
   .item.event .cb{cursor:default;color:var(--muted);}
   .item .date-badge{flex:0 0 auto;font-size:10px;color:var(--accent);margin-top:2px;}
   .item .title{flex:1 1 auto;word-break:break-word;line-height:1.35;}
+  .item .title strong{font-weight:700;}
+  .item .title em{font-style:italic;}
+  .item .title mark{background:var(--accent-faint);color:inherit;padding:0 1px;border-radius:2px;}
+  .item .title a{color:var(--accent);text-decoration:underline;}
   .item .time{font-size:10px;color:var(--muted);flex:0 0 auto;margin-top:2px;}
   .item .menu-btn{flex:0 0 auto;opacity:.35;font-size:12px;color:var(--muted);padding:0 3px;border:none;background:none;}
   .item:hover .menu-btn, .item .menu-btn.open{opacity:1;}
@@ -129,14 +133,15 @@
   .lucide{width:14px;height:14px;stroke-width:2;vertical-align:middle;display:block;}
 
   /* ---------- inline create ---------- */
-  .inline-create{display:flex;align-items:center;gap:4px;flex:0 0 auto;padding:2px 0;}
-  .inline-create input[type=text]{flex:1 1 auto;border:none;border-bottom:1px solid var(--accent);
-    border-radius:0;background:transparent;padding:2px 0;}
-  .inline-create input[type=text]:focus{outline:none;}
+  .inline-create{display:flex;align-items:flex-start;gap:4px;flex:0 0 auto;padding:2px 0;}
+  .inline-create textarea.ic-title{flex:1 1 auto;border:none;border-bottom:1px solid var(--accent);
+    border-radius:0;background:transparent;padding:2px 0;font:inherit;color:var(--text);
+    resize:none;overflow:hidden;min-height:1.4em;line-height:1.4;}
+  .inline-create textarea.ic-title:focus{outline:none;}
   .inline-create .ic-time-btn{flex:0 0 auto;padding:2px 4px;border:none;background:none;
-    display:flex;align-items:center;justify-content:center;color:var(--muted);}
+    display:flex;align-items:center;justify-content:center;color:var(--muted);margin-top:2px;}
   .inline-create .ic-time-btn:hover{color:var(--accent);}
-  .inline-create input[type=time]{flex:0 0 auto;font-size:11px;padding:1px 3px;}
+  .inline-create input[type=time]{flex:0 0 auto;font-size:11px;padding:1px 3px;margin-top:2px;}
 
   .item-menu{position:fixed;background:var(--bg);border:1px solid var(--border);border-radius:6px;
     box-shadow:0 4px 16px var(--shadow-a);z-index:1000;min-width:150px;overflow:hidden;}
@@ -234,7 +239,8 @@ function defaultSettings(){
     accentColor:'#4a7fe8',
     bgColor:'#f2f2f2',
     fgColor:'#222222',
-    highlightOpacity:0.16
+    highlightOpacity:0.16,
+    timeFormat:'24'
   };
 }
 function defaultState(){
@@ -653,6 +659,29 @@ function openItemMenu(btn,id){
   if(window.lucide) lucide.createIcons();
 }
 
+/* 轻量 inline markdown：粗体/斜体/高亮/链接，不支持块级格式 */
+function escapeHtml(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function renderInlineMarkdown(text){
+  let s=escapeHtml(text);
+  s=s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  s=s.replace(/\*\*([^\n*]+)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/__([^\n_]+)__/g,'<strong>$1</strong>');
+  s=s.replace(/==([^\n=]+)==/g,'<mark>$1</mark>');
+  s=s.replace(/(^|[^*])\*([^\n*]+)\*(?!\*)/g,'$1<em>$2</em>');
+  s=s.replace(/(^|[^_])_([^\n_]+)_(?!_)/g,'$1<em>$2</em>');
+  s=s.replace(/\n/g,'<br>');
+  return s;
+}
+function formatTime(hhmm){
+  if(!hhmm) return '';
+  if((state.settings.timeFormat||'24')==='24') return hhmm;
+  let [h,m]=hhmm.split(':').map(Number);
+  const ampm = h>=12 ? 'PM' : 'AM';
+  let h12 = h%12; if(h12===0) h12=12;
+  return `${h12}:${pad2(m)} ${ampm}`;
+}
 function anchorDateLabel(it){
   const a=it.anchor;
   if(a.level==='slot'||a.level==='day') return fmtMD(a.date);
@@ -693,13 +722,17 @@ function renderItemEl(it,opts){
     el.appendChild(db);
   }
 
-  const title=document.createElement('div'); title.className='title'; title.textContent=it.title;
+  const title=document.createElement('div'); title.className='title'; title.innerHTML=renderInlineMarkdown(it.title);
   title.style.cursor = opts.onTitleClick ? 'pointer' : 'text';
-  title.onclick=(e)=>{ e.stopPropagation(); if(opts.onTitleClick) opts.onTitleClick(it); else startInlineEditItem(el,it); };
+  title.onclick=(e)=>{
+    if(e.target.closest('a')) return; // 链接正常跳转，不进入编辑态
+    e.stopPropagation();
+    if(opts.onTitleClick) opts.onTitleClick(it); else startInlineEditItem(el,it);
+  };
   el.appendChild(title);
 
   if(it.anchor.time){
-    const t=document.createElement('div'); t.className='time'; t.textContent=it.anchor.time;
+    const t=document.createElement('div'); t.className='time'; t.textContent=formatTime(it.anchor.time);
     el.appendChild(t);
   }
 
@@ -787,11 +820,15 @@ function destroySortables(){
 }
 
 /* 内联新建 */
+function autoResizeTextarea(ta){
+  ta.style.height='auto';
+  ta.style.height=ta.scrollHeight+'px';
+}
 function startInlineCreate(itemsEl,anchorBase){
   if(itemsEl.querySelector('.inline-create')){ itemsEl.querySelector('.ic-title').focus(); return; }
   const row=document.createElement('div'); row.className='inline-create';
   row.innerHTML=`
-    <input type="text" class="ic-title" placeholder="输入标题，回车保存">
+    <textarea class="ic-title" rows="1" placeholder="输入标题，支持换行和简单markdown，⌘/Ctrl+Enter 保存"></textarea>
     <button type="button" class="ic-time-btn" title="设置时间点"><i data-lucide="clock"></i></button>
     <input type="time" class="ic-time" style="display:none;">
   `;
@@ -813,8 +850,9 @@ function startInlineCreate(itemsEl,anchorBase){
     if(title) createItemSmart(anchorBase,title,timeInp.value||null);
     renderAll();
   }
+  titleInp.addEventListener('input',()=>autoResizeTextarea(titleInp));
   titleInp.addEventListener('keydown',(e)=>{
-    if(e.key==='Enter'){ commit(); }
+    if(e.key==='Enter' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); commit(); }
     else if(e.key==='Escape'){ committed=true; row.remove(); }
   });
   titleInp.addEventListener('blur',()=>{
@@ -824,12 +862,13 @@ function startInlineCreate(itemsEl,anchorBase){
       commit();
     },150);
   });
+  autoResizeTextarea(titleInp);
   titleInp.focus();
 }
 function startInlineEditItem(itemEl,it){
   const parent=itemEl.parentElement; if(!parent) return;
   const row=document.createElement('div'); row.className='inline-create';
-  const titleInp=document.createElement('input'); titleInp.type='text'; titleInp.className='ic-title'; titleInp.value=it.title;
+  const titleInp=document.createElement('textarea'); titleInp.rows=1; titleInp.className='ic-title'; titleInp.value=it.title;
   const timeBtn=document.createElement('button'); timeBtn.type='button'; timeBtn.className='ic-time-btn'; timeBtn.title='设置时间点';
   timeBtn.appendChild(iconEl('clock'));
   const timeInp=document.createElement('input'); timeInp.type='time'; timeInp.className='ic-time'; timeInp.value=it.anchor.time||'';
@@ -850,8 +889,9 @@ function startInlineEditItem(itemEl,it){
     if(title) updateItemTitle(it.id,title,timeInp.value||null);
     renderAll();
   }
+  titleInp.addEventListener('input',()=>autoResizeTextarea(titleInp));
   titleInp.addEventListener('keydown',(e)=>{
-    if(e.key==='Enter'){ commit(); }
+    if(e.key==='Enter' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); commit(); }
     else if(e.key==='Escape'){ committed=true; renderAll(); }
   });
   titleInp.addEventListener('blur',()=>{
@@ -861,6 +901,7 @@ function startInlineEditItem(itemEl,it){
       commit();
     },150);
   });
+  autoResizeTextarea(titleInp);
   titleInp.focus();
   titleInp.select();
 }
@@ -936,7 +977,7 @@ function renderDayColumn(root){
   state.settings.daySlots.forEach((slot,i)=>{
     const isCurrentSlot = isToday && nowTime>=slot.start && nowTime<slot.end;
     list.appendChild(buildRow({
-      label:`${slot.name} ${slot.start}-${slot.end}`,
+      label:`${slot.name} ${formatTime(slot.start)}-${formatTime(slot.end)}`,
       anchorBase:{level:'slot',date:focus,slotIndex:i},
       items:itemsForSlot(focus,i),
       current:isCurrentSlot
@@ -1218,6 +1259,9 @@ function openSettingsModal(){
     <div class="row"><label>文字色</label><button type="button" id="pkFg" class="color-swatch"></button></div>
     <div class="row"><label>重点色</label><button type="button" id="pkAccent" class="color-swatch"></button></div>
     <div class="row"><label>高亮强度</label><input id="stHighlight" type="range" min="0.05" max="0.5" step="0.01"></div>
+    <div class="row"><label>时间格式</label>
+      <select id="stTimeFormat"><option value="24">24小时制</option><option value="12">12小时制（AM/PM）</option></select>
+    </div>
     <h3 style="margin-top:14px;">时段设置</h3>
     <div class="settings-grid" id="stSlots"></div>
     <div class="actions">
@@ -1230,6 +1274,7 @@ function openSettingsModal(){
   $('#stWeekStart').value=String(s.weekStart);
   $('#stMonthView').value=s.monthView;
   $('#stHighlight').value=s.highlightOpacity!=null?s.highlightOpacity:0.16;
+  $('#stTimeFormat').value=s.timeFormat||'24';
 
   function previewTheme(){
     const bak=state.settings;
@@ -1278,6 +1323,7 @@ function openSettingsModal(){
     s.fgColor=pending.fgColor;
     s.accentColor=pending.accentColor;
     s.highlightOpacity=Number($('#stHighlight').value);
+    s.timeFormat=$('#stTimeFormat').value;
     slotsWrap.querySelectorAll('input').forEach(inp=>{
       s.daySlots[Number(inp.dataset.i)][inp.dataset.f]=inp.value;
     });
