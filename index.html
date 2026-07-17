@@ -139,21 +139,26 @@
   .masonry-wrap{flex:1 1 auto;display:flex;overflow-y:auto;min-width:0;
     scrollbar-width:none;-ms-overflow-style:none;}
   .masonry-wrap::-webkit-scrollbar{display:none;width:0;height:0;}
-  .masonry-col{flex:1 1 0;display:flex;flex-direction:column;padding:6px;gap:8px;min-width:0;}
+  .masonry-col{flex:1 1 0;display:flex;flex-direction:column;padding:0;gap:0;min-width:0;
+    border-right:1px solid var(--border);}
 
-  .list-card{border:1px solid var(--border);background:var(--bg);display:flex;flex-direction:column;flex:0 0 auto;}
-  .list-card-header{display:flex;align-items:center;gap:4px;padding:4px 4px 4px 8px;border-bottom:1px solid var(--border);}
-  .list-name{font-weight:700;font-size:13px;cursor:pointer;flex:1 1 auto;word-break:break-word;}
-  .list-name-input{flex:1 1 auto;font-weight:700;font-size:13px;}
+  .list-card{border:none;border-bottom:1px solid var(--border);background:var(--bg);
+    display:flex;flex-direction:column;flex:0 0 auto;}
+  .list-card-header{display:flex;align-items:stretch;gap:0;height:28px;padding:0 0 0 8px;
+    border-bottom:1px solid var(--border);}
+  .list-name{font-weight:700;font-size:12px;cursor:pointer;flex:1 1 auto;display:flex;align-items:center;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .list-name-input{flex:1 1 auto;font-weight:700;font-size:12px;margin:0;border:none;border-bottom:1px solid var(--accent);}
   .list-card-actions{display:flex;flex:0 0 auto;}
-  .list-card-actions button{border:none;background:none;padding:2px 4px;color:var(--muted);border-radius:0;margin:0;}
-  .list-card-actions button:hover{color:var(--accent);}
+  .list-card-actions button{height:100%;border:none;border-left:1px solid var(--border);background:var(--bg);
+    padding:0 6px;color:var(--muted);border-radius:0;margin:0;display:flex;align-items:center;justify-content:center;}
+  .list-card-actions button:hover{background:var(--accent-faint2);color:var(--accent);}
   .list-card-actions .lucide{width:13px;height:13px;}
-  .list-card-body{padding:2px 6px 6px;display:flex;flex-direction:column;}
+  .list-card-body{padding:2px 8px 4px;display:flex;flex-direction:column;}
 
-  .add-list-btn{width:100%;border:1px dashed var(--border);background:transparent;
+  .add-list-btn{width:100%;border:none;border-bottom:1px dashed var(--border);background:transparent;
     padding:4px 8px;font-size:11px;color:var(--muted);border-radius:0;margin:0;}
-  .add-list-btn:hover{color:var(--accent);border-color:var(--accent);}
+  .add-list-btn:hover{color:var(--accent);}
 
   .hash-badge{flex:0 0 auto;border:none;background:none;color:var(--accent);padding:0 2px;margin-top:2px;
     cursor:pointer;display:flex;align-items:center;}
@@ -1515,7 +1520,7 @@ function renderListCard(list){
 
 /* 简化版瀑布流：用"list里任务数量"估算高度，把list依次分配到当前最短的列 */
 function estimateListHeight(list){
-  const HEADER=34, ROW=24, PAD=16;
+  const HEADER=28, ROW=22, PAD=8;
   const count = list.isAddButton ? 0 : getItemsForList(list.id).length;
   if(list.isAddButton) return 26;
   return HEADER + Math.max(count,0)*ROW + PAD;
