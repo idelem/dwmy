@@ -1422,7 +1422,7 @@ function renderSomedayColumn(root){
   const items=Object.values(state.items).filter(it=>it.anchor.level==='someday' && (!it.listIds||it.listIds.length===0));
   renderItemList(body,items);
   attachCreate(body,{level:'someday',date:null,slotIndex:null});
-  makeDropZone(body,{level:'someday',date:null,slotIndex:null});
+  makeListItemDropZone(body,{type:'someday'});
   root.appendChild(body);
 }
 
@@ -1502,7 +1502,11 @@ function renderListCard(list){
   const searchBtn=iconButton('search','搜索并添加任务', ()=>openListSearchModal(list.id));
   const pasteBtn=iconButton('clipboard-paste','粘贴任务ID加入此list', ()=>pasteTaskIdToList(list.id));
   const copyBtn=iconButton('copy','复制此list的ID', ()=>copyListId(list.id));
-  const delBtn=iconButton('trash-2','删除此list', ()=>{ deleteList(list.id); renderAll(); });
+  const delBtn=iconButton('trash-2','删除此list', ()=>{
+    if(confirm(`确定要删除 list "${list.name}" 吗？\n只会解除任务和它的关联，不会删除任务本身。`)){
+      deleteList(list.id); renderAll();
+    }
+  });
   [pinBtn,searchBtn,pasteBtn,copyBtn,delBtn].forEach(b=>btns.appendChild(b));
   header.appendChild(btns);
   card.appendChild(header);
@@ -1512,6 +1516,7 @@ function renderListCard(list){
   renderItemList(body,items,{showDate:true,listContext:list.id});
   card.appendChild(body);
   attachCreate(body,{level:'someday',date:null,slotIndex:null},{afterCreate:(newId)=>addItemToList(newId,list.id)});
+  makeListItemDropZone(body,{type:'list',listId:list.id});
 
   return card;
 }
@@ -1538,6 +1543,7 @@ function setupListSortable(colEl){
   const s=Sortable.create(colEl,{
     group:'dwmy-lists',
     animation:150,
+    handle:'.list-card-header',
     draggable:'.list-card',
     filter:'.add-list-btn',
     preventOnFilter:false,
@@ -1546,6 +1552,53 @@ function setupListSortable(colEl){
       const nextEl=evt.item.nextElementSibling;
       const beforeId = nextEl && nextEl.classList.contains('list-card') ? nextEl.dataset.listId : null;
       moveListInOrder(id,beforeId);
+      renderAll();
+    }
+  });
+  sortableInstances.push(s);
+}
+
+/* list/Someday 内部的 item 拖拽：shift+落在某任务上=建立子任务关系；
+   shift+落在空白=复制为子任务并加入该list；普通拖拽=在list/Someday之间移动归属 */
+function makeListItemDropZone(el,context){
+  el.dataset.dzType = context.type;
+  el.dataset.dzListId = context.type==='list' ? context.listId : '';
+  const s=Sortable.create(el,{
+    group:'dwmy-back-items',
+    animation:150,
+    sort:false,
+    filter:'.cell-blank,.inline-create',
+    preventOnFilter:false,
+    onEnd:function(evt){
+      const id=evt.item.dataset.id; if(!id) return;
+      const target=evt.to; const from=evt.from;
+      const oe=evt.originalEvent;
+      const shift=!!(oe && oe.shiftKey);
+      let landedItemId=null;
+      if(oe){
+        const px = oe.clientX!=null ? oe.clientX : (oe.changedTouches && oe.changedTouches[0] && oe.changedTouches[0].clientX);
+        const py = oe.clientY!=null ? oe.clientY : (oe.changedTouches && oe.changedTouches[0] && oe.changedTouches[0].clientY);
+        if(px!=null && py!=null){
+          const under=document.elementFromPoint(px,py);
+          const itemEl=under && under.closest('.item');
+          if(itemEl && itemEl!==evt.item && itemEl.dataset.id) landedItemId=itemEl.dataset.id;
+        }
+      }
+      const targetListId = target.dataset.dzListId || null;
+      const fromListId = from.dataset.dzListId || null;
+
+      if(shift){
+        if(landedItemId){
+          const ok=setParent(id,landedItemId);
+          if(!ok) alert('无法关联：会形成循环引用');
+        }else{
+          const newId=copyAsChild(id,{level:'someday',date:null,slotIndex:null,time:null});
+          if(targetListId) addItemToList(newId,targetListId);
+        }
+      }else{
+        if(fromListId && fromListId!==targetListId) removeItemFromList(id,fromListId);
+        if(targetListId && targetListId!==fromListId) addItemToList(id,targetListId);
+      }
       renderAll();
     }
   });
