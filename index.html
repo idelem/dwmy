@@ -80,6 +80,8 @@
   .cell:last-child{border-bottom:none;}
   .cell.current{background:var(--accent-faint);}
   .cell .cell-label{font-size:10px;color:var(--muted);flex:0 0 auto;display:flex;gap:6px;}
+  .cell .cell-label.clickable{cursor:pointer;}
+  .cell .cell-label.clickable:hover{color:var(--accent);text-decoration:underline;}
   .cell-blank{flex:1 1 auto;min-height:14px;cursor:text;}
   .cell.week-boundary{border-top:2px solid var(--accent);}
 
@@ -139,7 +141,7 @@
   .masonry-wrap{flex:1 1 auto;display:flex;overflow-y:auto;min-width:0;
     scrollbar-width:none;-ms-overflow-style:none;}
   .masonry-wrap::-webkit-scrollbar{display:none;width:0;height:0;}
-  .masonry-col{flex:1 1 0;display:flex;flex-direction:column;padding:0;gap:0;min-width:0;}
+  .masonry-col{flex:1 1 300px;min-width:260px;max-width:420px;display:flex;flex-direction:column;padding:0;gap:0;}
 
   .list-card{border:1px solid var(--border);margin:-1px -0.5px 0px -0.5px ;background:var(--bg);display:flex;flex-direction:column;flex:0 0 auto;}
   .list-card-header{display:flex;align-items:stretch;gap:0;height:28px;padding:0 0 0 8px;
@@ -259,7 +261,11 @@ function getWeekStartKey(dateKey,weekStart){
   d.setDate(d.getDate()-diff);
   return keyFromDate(d);
 }
-function fmtMD(key){const [,m,d]=key.split('-');return `${Number(m)}/${Number(d)}`;}
+function fmtMD(key){
+  const [y,m,d]=key.split('-');
+  const suffix = y!==yearKeyOf(todayKey()) ? '/'+y : '';
+  return `${Number(m)}/${Number(d)}${suffix}`;
+}
 function fmtYM(key){const [y,m]=key.split('-');return `${y}年${Number(m)}月`;}
 const WEEKDAY_NAMES=['日','一','二','三','四','五','六'];
 const MONTH_NAMES=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
@@ -292,7 +298,8 @@ function defaultSettings(){
     bgColor:'#f2f2f2',
     fgColor:'#222222',
     highlightOpacity:0.16,
-    timeFormat:'24'
+    timeFormat:'24',
+    weekShowSlots:false
   };
 }
 function defaultState(){
@@ -647,6 +654,11 @@ function itemsForSlot(dateKey,slotIdx){
 function itemsForDay(dateKey){
   return Object.values(state.items).filter(it=>it.anchor.level==='day'&&it.anchor.date===dateKey);
 }
+/* 当天全部任务，含分时段的（Week 列切换到"全部"视图时用） */
+function itemsForDayFull(dateKey){
+  const slots=Object.values(state.items).filter(it=>it.anchor.level==='slot'&&it.anchor.date===dateKey);
+  return itemsForDay(dateKey).concat(slots);
+}
 function itemsForWeek(weekStartKey){
   const ws=state.settings.weekStart;
   return Object.values(state.items).filter(it=>it.anchor.level==='week'&&getWeekStartKey(it.anchor.date,ws)===weekStartKey);
@@ -804,7 +816,12 @@ function openItemMenu(btn,id,listContext){
     menu.appendChild(removeMi);
   }
   const delMi=document.createElement('div'); delMi.className='mi'; delMi.style.color='var(--danger)'; delMi.textContent='删除';
-  delMi.onclick=()=>{ deleteItem(id); closeItemMenu(); renderAll(); };
+  delMi.onclick=()=>{
+    closeItemMenu();
+    if(confirm('确定要删除这条任务吗？'+(countChildren(id)>0?'\n（它的子任务会保留，只是解除关联）':''))){
+      deleteItem(id); renderAll();
+    }
+  };
   menu.appendChild(delMi);
 
   menu.appendChild(document.createElement('hr'));
@@ -1033,7 +1050,7 @@ function startInlineCreate(itemsEl,anchorBase,opts){
   if(itemsEl.querySelector('.inline-create')){ itemsEl.querySelector('.ic-title').focus(); return; }
   const row=document.createElement('div'); row.className='inline-create';
   row.innerHTML=`
-    <textarea class="ic-title" rows="1" placeholder="输入标题，支持换行和简单markdown，⌘/Ctrl+Enter 保存"></textarea>
+    <textarea class="ic-title" rows="1" placeholder="输入标题，支持简单markdown，回车保存，Shift+回车换行"></textarea>
     <button type="button" class="ic-time-btn" title="设置时间点"><i data-lucide="clock"></i></button>
     <input type="time" class="ic-time" style="display:none;">
   `;
@@ -1060,8 +1077,11 @@ function startInlineCreate(itemsEl,anchorBase,opts){
   }
   titleInp.addEventListener('input',()=>autoResizeTextarea(titleInp));
   titleInp.addEventListener('keydown',(e)=>{
-    if(e.key==='Enter' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); commit(); }
+    if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); commit(); }
     else if(e.key==='Escape'){ committed=true; row.remove(); }
+  });
+  timeInp.addEventListener('keydown',(e)=>{
+    if(e.key==='Enter'){ e.preventDefault(); commit(); }
   });
   titleInp.addEventListener('blur',()=>{
     setTimeout(()=>{
@@ -1099,8 +1119,11 @@ function startInlineEditItem(itemEl,it){
   }
   titleInp.addEventListener('input',()=>autoResizeTextarea(titleInp));
   titleInp.addEventListener('keydown',(e)=>{
-    if(e.key==='Enter' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); commit(); }
+    if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); commit(); }
     else if(e.key==='Escape'){ committed=true; renderAll(); }
+  });
+  timeInp.addEventListener('keydown',(e)=>{
+    if(e.key==='Enter'){ e.preventDefault(); commit(); }
   });
   titleInp.addEventListener('blur',()=>{
     setTimeout(()=>{
@@ -1128,17 +1151,35 @@ function renderBacklog(container,items){
   renderItemList(container,items,{showDate:true});
 }
 
-/* 生成一个"行"：整个 cell 本身就是可拖放/可点击新建的区域 */
-function buildRow({label,anchorBase,items,current,weekBoundary,showDate}){
+/* 生成一个"行"：整个 cell 本身就是可拖放/可点击新建的区域；label 若给了 onLabelClick 则可点击跳转 */
+function buildRow({label,anchorBase,items,current,weekBoundary,showDate,onLabelClick}){
   const cell=document.createElement('div'); cell.className='cell'+(current?' current':'')+(weekBoundary?' week-boundary':'');
   if(label!=null){
     const lab=document.createElement('div'); lab.className='cell-label'; lab.textContent=label;
+    if(onLabelClick){
+      lab.classList.add('clickable');
+      lab.onclick=(e)=>{ e.stopPropagation(); onLabelClick(); };
+    }
     cell.appendChild(lab);
   }
   renderItemList(cell,items,{showDate:!!showDate});
   attachCreate(cell,anchorBase);
   makeDropZone(cell,anchorBase);
   return cell;
+}
+/* 让某一列跳转到指定时间点，并把该列滚动到可见范围 */
+function jumpColumnTo(colId,key){
+  const f=state.ui.focus;
+  if(colId==='day') f.day=key;
+  else if(colId==='week') f.week=key;
+  else if(colId==='month') f.month=key;
+  else if(colId==='year') f.year=key;
+  else return;
+  saveState(); renderAll();
+  requestAnimationFrame(()=>{
+    const colEl=document.querySelector(`.column[data-col="${colId}"]`);
+    if(colEl) colEl.scrollIntoView({behavior:'smooth',inline:'nearest',block:'nearest'});
+  });
 }
 /* 空白格默认高度=容器高度/格子数；内容较多的格子自然撑高，其它格子保持默认高度，
    整个 cell-list 变为可滚动（滚动条已在CSS里隐藏） */
@@ -1221,6 +1262,13 @@ function renderWeekColumn(root){
   root.appendChild(backlog);
 
   const main=document.createElement('div'); main.className='mainview';
+  const toolbar=document.createElement('div'); toolbar.className='toolbar';
+  const toggle=document.createElement('button');
+  toggle.textContent = state.settings.weekShowSlots ? '切换为「仅当日任务」' : '切换为「当天全部任务」';
+  toggle.onclick=()=>{ state.settings.weekShowSlots=!state.settings.weekShowSlots; saveState(); renderAll(); };
+  toolbar.appendChild(toggle);
+  main.appendChild(toolbar);
+
   const list=document.createElement('div'); list.className='cell-list';
   const tk=todayKey();
   for(let i=0;i<7;i++){
@@ -1228,8 +1276,9 @@ function renderWeekColumn(root){
     list.appendChild(buildRow({
       label:`周${WEEKDAY_NAMES[(ws+i)%7]} ${fmtMD(dayKey)}`,
       anchorBase:{level:'day',date:dayKey,slotIndex:null},
-      items:itemsForDay(dayKey),
-      current: dayKey===tk
+      items: state.settings.weekShowSlots ? itemsForDayFull(dayKey) : itemsForDay(dayKey),
+      current: dayKey===tk,
+      onLabelClick:()=>jumpColumnTo('day',dayKey)
     }));
   }
   equalizeRows(list);
@@ -1291,7 +1340,8 @@ function renderMonthColumn(root){
         label:`${fmtMD(week.weekStart)} 这一周`,
         anchorBase:{level:'week',date:week.weekStart,slotIndex:null},
         items:itemsForWeek(week.weekStart),
-        current: week.weekStart===thisWeekStart
+        current: week.weekStart===thisWeekStart,
+        onLabelClick:()=>jumpColumnTo('week',week.weekStart)
       }));
     });
   }else{
@@ -1303,7 +1353,8 @@ function renderMonthColumn(root){
           anchorBase:{level:'day',date:dayKey,slotIndex:null},
           items:itemsForDay(dayKey),
           current: dayKey===tk,
-          weekBoundary: dayKey===week.weekStart
+          weekBoundary: dayKey===week.weekStart,
+          onLabelClick:()=>jumpColumnTo('day',dayKey)
         });
         list.appendChild(row);
       });
@@ -1344,7 +1395,8 @@ function renderYearColumn(root){
       label:MONTH_NAMES[m-1],
       anchorBase:{level:'month',date:monthKey,slotIndex:null},
       items:itemsForMonth(monthKey),
-      current: monthKey===thisMonthKey
+      current: monthKey===thisMonthKey,
+      onLabelClick:()=>jumpColumnTo('month',monthKey)
     }));
   }
   equalizeRows(list);
@@ -1385,7 +1437,8 @@ function renderLifeColumn(root){
       label:yearKey+'年',
       anchorBase:{level:'year',date:yearKey,slotIndex:null},
       items:itemsForYear(yearKey),
-      current: yearKey===thisYearKey
+      current: yearKey===thisYearKey,
+      onLabelClick:()=>jumpColumnTo('year',yearKey)
     });
     list.appendChild(row);
   }
