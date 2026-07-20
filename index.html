@@ -205,6 +205,9 @@
   .modal{background:var(--bg);border-radius:8px;padding:16px;min-width:300px;max-width:90vw;
     box-shadow:0 10px 40px var(--shadow-a);}
   .modal .row .color-swatch{width:36px;height:22px;padding:0;border:1px solid var(--border);cursor:pointer;}
+  .theme-io-row{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+  .theme-io-row .lucide{width:14px;height:14px;color:var(--muted);flex:0 0 auto;}
+  .theme-io-row button{flex:1 1 0;font-size:12px;}
   .modal h3{margin:0 0 10px;font-size:14px;}
   .modal .row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
   .modal .row label{flex:0 0 80px;color:var(--muted);font-size:12px;}
@@ -1746,12 +1749,23 @@ function openSettingsModal(){
     <div class="row"><label>Month视图</label>
       <select id="stMonthView"><option value="day">日视图</option><option value="week">周视图</option></select>
     </div>
-    <div class="row"><label>背景色</label><button type="button" id="pkBg" class="color-swatch"></button></div>
-    <div class="row"><label>文字色</label><button type="button" id="pkFg" class="color-swatch"></button></div>
-    <div class="row"><label>重点色</label><button type="button" id="pkAccent" class="color-swatch"></button></div>
     <div class="row"><label>高亮强度</label><input id="stHighlight" type="range" min="0.05" max="0.5" step="0.01"></div>
     <div class="row"><label>时间格式</label>
       <select id="stTimeFormat"><option value="24">24小时制</option><option value="12">12小时制（AM/PM）</option></select>
+    </div>
+    <h3 style="margin-top:14px;">主题</h3>
+    <div class="row"><label>背景色</label><button type="button" id="pkBg" class="color-swatch"></button></div>
+    <div class="row"><label>文字色</label><button type="button" id="pkFg" class="color-swatch"></button></div>
+    <div class="row"><label>重点色</label><button type="button" id="pkAccent" class="color-swatch"></button></div>
+    <div class="theme-io-row">
+      <i data-lucide="hash"></i>
+      <button type="button" id="themeCopyHex">Copy as hex</button>
+      <button type="button" id="themePasteHex">Paste as hex</button>
+    </div>
+    <div class="theme-io-row">
+      <i data-lucide="swatch-book"></i>
+      <button type="button" id="themeCopySvg">Copy as svg</button>
+      <button type="button" id="themePasteSvg">Paste as svg</button>
     </div>
     <h3 style="margin-top:14px;">时段设置</h3>
     <div class="settings-grid" id="stSlots"></div>
@@ -1761,6 +1775,7 @@ function openSettingsModal(){
     </div>
   `;
   mask.appendChild(modal); document.body.appendChild(mask);
+  if(window.lucide) lucide.createIcons();
   const $=(sel)=>modal.querySelector(sel);
   $('#stWeekStart').value=String(s.weekStart);
   $('#stMonthView').value=s.monthView;
@@ -1787,11 +1802,66 @@ function openSettingsModal(){
     });
     p.on('save',()=>p.hide());
     pickrs.push(p);
+    return p;
   }
-  makePickr('#pkBg',pending.bgColor,(hex)=>{ pending.bgColor=hex; });
-  makePickr('#pkFg',pending.fgColor,(hex)=>{ pending.fgColor=hex; });
-  makePickr('#pkAccent',pending.accentColor,(hex)=>{ pending.accentColor=hex; });
+  const pickrBg=makePickr('#pkBg',pending.bgColor,(hex)=>{ pending.bgColor=hex; });
+  const pickrFg=makePickr('#pkFg',pending.fgColor,(hex)=>{ pending.fgColor=hex; });
+  const pickrAccent=makePickr('#pkAccent',pending.accentColor,(hex)=>{ pending.accentColor=hex; });
   $('#stHighlight').addEventListener('input',previewTheme);
+
+  function applyPastedColors(bg,fg,accent){
+    if(bg){ pending.bgColor=bg; pickrBg.setColor(bg); pickrBg.applyColor(true); }
+    if(fg){ pending.fgColor=fg; pickrFg.setColor(fg); pickrFg.applyColor(true); }
+    if(accent){ pending.accentColor=accent; pickrAccent.setColor(accent); pickrAccent.applyColor(true); }
+    previewTheme();
+  }
+  function themeToHexString(){
+    return `${pending.bgColor} ${pending.fgColor} ${pending.accentColor}`;
+  }
+  function themeToSvgString(){
+    return `<svg width="96px" height="32px" xmlns="http://www.w3.org/2000/svg" baseProfile="full" version="1.1">
+  <circle cx='16' cy='16' r='16' id='bg' fill='${pending.bgColor}'></circle>
+  <circle cx='48' cy='16' r='16' id='fg' fill='${pending.fgColor}'></circle>
+  <circle cx='80' cy='16' r='16' id='accent' fill='${pending.accentColor}'></circle>
+</svg>`;
+  }
+  function extractSvgColor(svgText,id){
+    let m=svgText.match(new RegExp(`id=['"]${id}['"][^>]*fill=['"]([^'"]+)['"]`));
+    if(m) return m[1];
+    m=svgText.match(new RegExp(`fill=['"]([^'"]+)['"][^>]*id=['"]${id}['"]`));
+    return m ? m[1] : null;
+  }
+  $('#themeCopyHex').onclick=async ()=>{
+    try{ await navigator.clipboard.writeText(themeToHexString()); }
+    catch(e){ alert('无法复制到剪贴板（可能是浏览器权限限制）'); }
+  };
+  $('#themePasteHex').onclick=async ()=>{
+    try{
+      const text=(await navigator.clipboard.readText()).trim();
+      const parts=text.split(/\s+/).filter(Boolean);
+      const hexRe=/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+      if(parts.length!==3 || !parts.every(p=>hexRe.test(p))){
+        alert('剪贴板内容格式不对，需要是 3 个用空格分隔的 hex 颜色（背景 文字 重点色）');
+        return;
+      }
+      applyPastedColors(parts[0],parts[1],parts[2]);
+    }catch(e){ alert('无法读取剪贴板（可能是浏览器权限限制）'); }
+  };
+  $('#themeCopySvg').onclick=async ()=>{
+    try{ await navigator.clipboard.writeText(themeToSvgString()); }
+    catch(e){ alert('无法复制到剪贴板（可能是浏览器权限限制）'); }
+  };
+  $('#themePasteSvg').onclick=async ()=>{
+    try{
+      const text=await navigator.clipboard.readText();
+      const bg=extractSvgColor(text,'bg'), fg=extractSvgColor(text,'fg'), accent=extractSvgColor(text,'accent');
+      if(!bg||!fg||!accent){
+        alert('剪贴板内容不是有效的主题 SVG（需要包含 id="bg"/"fg"/"accent" 的 fill 颜色）');
+        return;
+      }
+      applyPastedColors(bg,fg,accent);
+    }catch(e){ alert('无法读取剪贴板（可能是浏览器权限限制）'); }
+  };
 
   function cleanup(){ pickrs.forEach(p=>{ try{p.destroyAndRemove();}catch(e){} }); }
   function cancel(){ cleanup(); mask.remove(); applyTheme(); }
