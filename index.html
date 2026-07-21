@@ -421,6 +421,7 @@ function makeId(){return 'i'+Date.now().toString(36)+Math.random().toString(36).
    之后所有同步请求前端直连 GitHub Contents API，靠文件的 sha 做冲突检测。
 ========================================================= */
 const GITHUB_APP_SLUG='dwmy-sync';
+const GITHUB_CLIENT_ID='Iv23li5w2pEFpvIzwf9Z';
 const GITHUB_AUTH_ORIGIN='https://dwmy-auth.vercel.app';
 const GITHUB_DATA_PATH='dwmy-data.json';
 const GITHUB_CONN_KEY='dwmy_github_conn_v1';
@@ -458,11 +459,13 @@ async function githubApiFetch(path,opts){
   return fetch('https://api.github.com'+path,Object.assign({},opts,{headers}));
 }
 
-/* 登录：跳转到 App 的安装+授权页，弹窗完成后通过 postMessage 拿回 token */
+/* 登录：走纯授权入口（不管这个账号装没装过 App 都能用），弹窗完成后通过 postMessage 拿回 token。
+   不用 /apps/{slug}/installations/new——那个是"新装"入口，账号已经装过 App 时点进去只会
+   进 Configure 页面，不会产生新的 code。 */
 function startGithubLogin(){
   const nonce=Math.random().toString(36).slice(2)+Date.now().toString(36);
   sessionStorage.setItem('dwmy_oauth_state',nonce);
-  const url=`https://github.com/apps/${GITHUB_APP_SLUG}/installations/new?state=${encodeURIComponent(nonce)}`;
+  const url=`https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&state=${encodeURIComponent(nonce)}`;
   window.open(url,'dwmy-github-login','width=640,height=720');
 }
 window.addEventListener('message',(e)=>{
@@ -495,7 +498,8 @@ async function handleGithubLoginSuccess(token){
       });
     }
     if(candidates.length===0){
-      alert('这个 App 还没有被授权访问任何仓库。请重新安装 App 并至少选择一个仓库。');
+      const goInstall=confirm('这个 GitHub 账号还没有安装 DWMY Sync 这个 App。\n点"确定"去安装页面（选完仓库装完后，回来再点一次"连接 GitHub"就行）。');
+      if(goInstall) window.open(`https://github.com/apps/${GITHUB_APP_SLUG}/installations/new`,'_blank');
       return;
     }
     let chosen;
