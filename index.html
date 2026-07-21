@@ -411,8 +411,268 @@ function seedState(s){
 }
 function saveState(){
   try{ localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); }catch(e){ console.error('save failed',e); }
+  scheduleAutoSyncIfChanged();
 }
 function makeId(){return 'i'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+
+/* =========================================================
+   GitHub 同步
+   架构：GitHub App（user-to-server token，不过期）+ 一个 Vercel 回调函数换 token；
+   之后所有同步请求前端直连 GitHub Contents API，靠文件的 sha 做冲突检测。
+========================================================= */
+const GITHUB_APP_SLUG='dwmy-sync';
+const GITHUB_AUTH_ORIGIN='https://dwmy-auth.vercel.app';
+const GITHUB_DATA_PATH='dwmy-data.json';
+const GITHUB_CONN_KEY='dwmy_github_conn_v1';
+
+function getGithubConn(){
+  try{ const raw=localStorage.getItem(GITHUB_CONN_KEY); return raw?JSON.parse(raw):null; }catch(e){ return null; }
+}
+function saveGithubConn(conn){
+  try{ localStorage.setItem(GITHUB_CONN_KEY,JSON.stringify(conn)); }catch(e){ console.error('save github conn failed',e); }
+}
+function clearGithubConn(){
+  try{ localStorage.removeItem(GITHUB_CONN_KEY); }catch(e){}
+}
+function isGithubConnected(){
+  const c=getGithubConn();
+  return !!(c && c.token && c.owner && c.repo);
+}
+
+/* base64 编解码，兼容中文等非 ASCII 字符 */
+function b64EncodeUnicode(str){
+  return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g,(_,p1)=>String.fromCharCode('0x'+p1)));
+}
+function b64DecodeUnicode(str){
+  return decodeURIComponent(atob(str).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+}
+
+async function githubApiFetch(path,opts){
+  opts=opts||{};
+  const conn=getGithubConn();
+  const token=opts.token || (conn && conn.token);
+  const headers=Object.assign({
+    'Authorization':'Bearer '+token,
+    'Accept':'application/vnd.github+json'
+  },opts.headers||{});
+  return fetch('https://api.github.com'+path,Object.assign({},opts,{headers}));
+}
+
+/* 登录：跳转到 App 的安装+授权页，弹窗完成后通过 postMessage 拿回 token */
+function startGithubLogin(){
+  const nonce=Math.random().toString(36).slice(2)+Date.now().toString(36);
+  sessionStorage.setItem('dwmy_oauth_state',nonce);
+  const url=`https://github.com/apps/${GITHUB_APP_SLUG}/installations/new?state=${encodeURIComponent(nonce)}`;
+  window.open(url,'dwmy-github-login','width=640,height=720');
+}
+window.addEventListener('message',(e)=>{
+  if(e.origin!==GITHUB_AUTH_ORIGIN) return;
+  const data=e.data;
+  if(!data||data.type!=='dwmy-oauth-result') return;
+  const expected=sessionStorage.getItem('dwmy_oauth_state');
+  sessionStorage.removeItem('dwmy_oauth_state');
+  if(!expected||data.state!==expected){ console.warn('DWMY: oauth state 不匹配，忽略这条消息'); return; }
+  if(!data.ok){ alert('GitHub 登录失败：'+(data.message||'未知错误')); return; }
+  handleGithubLoginSuccess(data.token);
+});
+
+/* 登录成功后：找到用户安装了这个 App 的仓库，选一个作为同步目标，然后做一次首次核对 */
+async function handleGithubLoginSuccess(token){
+  try{
+    const resp=await githubApiFetch('/user/installations',{token});
+    if(!resp.ok) throw new Error('无法获取已安装的 App 信息 ('+resp.status+')');
+    const data=await resp.json();
+    const installations=data.installations||[];
+    if(installations.length===0){ alert('没有找到任何安装记录，请重试登录流程'); return; }
+
+    let candidates=[];
+    for(const inst of installations){
+      const rr=await githubApiFetch(`/user/installations/${inst.id}/repositories`,{token});
+      if(!rr.ok) continue;
+      const rd=await rr.json();
+      (rd.repositories||[]).forEach(repo=>{
+        candidates.push({installationId:inst.id,owner:repo.owner.login,repo:repo.name,fullName:repo.full_name});
+      });
+    }
+    if(candidates.length===0){
+      alert('这个 App 还没有被授权访问任何仓库。请重新安装 App 并至少选择一个仓库。');
+      return;
+    }
+    let chosen;
+    if(candidates.length===1){
+      chosen=candidates[0];
+    }else{
+      const idx=promptChooseRepo(candidates);
+      if(idx==null) return;
+      chosen=candidates[idx];
+    }
+    saveGithubConn({
+      token,
+      installationId:chosen.installationId,
+      owner:chosen.owner,
+      repo:chosen.repo,
+      lastSyncedSha:null,
+      lastSyncedAt:null
+    });
+    await reconcileAfterLogin();
+    const sec=document.getElementById('ghSyncSection');
+    if(sec) renderGhSyncSection(sec);
+  }catch(e){
+    alert('登录处理失败：'+e.message);
+  }
+}
+function promptChooseRepo(candidates){
+  const list=candidates.map((c,i)=>(i+1)+'. '+c.fullName).join('\n');
+  const input=prompt('检测到多个可用仓库，请输入序号选择用于同步的仓库：\n'+list);
+  if(input==null) return null;
+  const n=parseInt(input.trim(),10);
+  if(!n||n<1||n>candidates.length) return null;
+  return n-1;
+}
+
+/* 首次连接：远端已有数据 -> 问要不要拉取覆盖本地；远端是空的 -> 问要不要把本地推上去 */
+async function reconcileAfterLogin(){
+  const conn=getGithubConn();
+  const resp=await githubApiFetch(`/repos/${conn.owner}/${conn.repo}/contents/${GITHUB_DATA_PATH}`);
+  if(resp.status===404){
+    const ok=confirm('该仓库还没有 DWMY 同步数据，是否把当前本地数据上传作为初始数据？');
+    if(ok) await pushSync();
+    return;
+  }
+  if(!resp.ok){ alert('读取远端数据失败 ('+resp.status+')'); return; }
+  const data=await resp.json();
+  const useRemote=confirm('该仓库已经有 DWMY 同步数据。\n点"确定"用远端数据覆盖本地，点"取消"保留本地数据（本地数据会在下次同步时推送覆盖远端）。');
+  if(useRemote){
+    applyRemoteContent(data);
+  }else{
+    conn.lastSyncedSha=data.sha;
+    saveGithubConn(conn);
+  }
+}
+
+function applyRemoteContent(data){
+  try{
+    const jsonStr=b64DecodeUnicode((data.content||'').replace(/\n/g,''));
+    const remote=JSON.parse(jsonStr);
+    state=remote;
+    migrateState(state);
+    applyTheme();
+    localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
+    const conn=getGithubConn();
+    conn.lastSyncedSha=data.sha;
+    conn.lastSyncedAt=Date.now();
+    saveGithubConn(conn);
+    lastSyncSignature=syncableSnapshot();
+    renderAll();
+  }catch(e){
+    alert('解析远端数据失败：'+e.message);
+  }
+}
+
+/* 自动同步：只在"实际会同步的数据"变化时才触发，导航/切换视图这类操作不算 */
+let lastSyncSignature=null;
+let autoSyncTimer=null;
+function syncableSnapshot(){
+  return JSON.stringify({items:state.items,lists:state.lists,listOrder:state.listOrder,settings:state.settings});
+}
+function scheduleAutoSyncIfChanged(){
+  if(!isGithubConnected()) return;
+  const sig=syncableSnapshot();
+  if(sig===lastSyncSignature) return;
+  lastSyncSignature=sig;
+  clearTimeout(autoSyncTimer);
+  autoSyncTimer=setTimeout(()=>{ pushSync(); },3000);
+}
+
+let syncInProgress=false;
+async function pushSync(){
+  if(!isGithubConnected()) return;
+  if(syncInProgress) return;
+  syncInProgress=true;
+  try{
+    const conn=getGithubConn();
+    const body={
+      message:'DWMY sync '+new Date().toISOString(),
+      content:b64EncodeUnicode(JSON.stringify(state))
+    };
+    if(conn.lastSyncedSha) body.sha=conn.lastSyncedSha;
+    const resp=await githubApiFetch(`/repos/${conn.owner}/${conn.repo}/contents/${GITHUB_DATA_PATH}`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+    if(resp.status===409||resp.status===422){
+      await handleSyncConflict();
+      return;
+    }
+    if(!resp.ok){ throw new Error(resp.status+' '+(await resp.text())); }
+    const json=await resp.json();
+    conn.lastSyncedSha=json.content.sha;
+    conn.lastSyncedAt=Date.now();
+    saveGithubConn(conn);
+    lastSyncSignature=syncableSnapshot();
+  }catch(e){
+    console.error('DWMY sync failed',e);
+  }finally{
+    syncInProgress=false;
+    const sec=document.getElementById('ghSyncSection');
+    if(sec) renderGhSyncSection(sec);
+  }
+}
+
+async function handleSyncConflict(){
+  const conn=getGithubConn();
+  const useRemote=confirm('同步冲突：远端数据已经被其它设备更新过。\n点"确定"拉取远端覆盖本地，点"取消"强制用本地覆盖远端。');
+  const resp=await githubApiFetch(`/repos/${conn.owner}/${conn.repo}/contents/${GITHUB_DATA_PATH}`);
+  if(!resp.ok) return;
+  const remote=await resp.json();
+  if(useRemote){
+    applyRemoteContent(remote);
+  }else{
+    conn.lastSyncedSha=remote.sha;
+    saveGithubConn(conn);
+    await pushSync();
+  }
+}
+
+function logoutGithub(){
+  if(!confirm('确定要退出登录吗？本地数据不会被删除，只是不再自动同步。')) return;
+  clearGithubConn();
+  clearTimeout(autoSyncTimer);
+  const sec=document.getElementById('ghSyncSection');
+  if(sec) renderGhSyncSection(sec);
+}
+
+/* 设置面板里的 GitHub 同步区块 */
+function renderGhSyncSection(container){
+  container.innerHTML='';
+  const conn=getGithubConn();
+  if(!conn){
+    const p=document.createElement('div');
+    p.style.cssText='margin-bottom:8px;color:var(--muted);font-size:12px;';
+    p.textContent='尚未连接，数据只保存在本地浏览器里。';
+    container.appendChild(p);
+    const btn=document.createElement('button'); btn.type='button'; btn.className='primary'; btn.textContent='连接 GitHub';
+    btn.onclick=()=>startGithubLogin();
+    container.appendChild(btn);
+  }else{
+    const info=document.createElement('div');
+    info.style.cssText='margin-bottom:8px;font-size:12px;line-height:1.6;';
+    const lastSync=conn.lastSyncedAt?new Date(conn.lastSyncedAt).toLocaleString():'尚未同步';
+    info.innerHTML=`已连接：<strong>${escapeHtml(conn.owner+'/'+conn.repo)}</strong><br>上次同步：${escapeHtml(lastSync)}`;
+    container.appendChild(info);
+    const row=document.createElement('div'); row.style.cssText='display:flex;gap:8px;';
+    const syncBtn=document.createElement('button'); syncBtn.type='button'; syncBtn.textContent='立即同步';
+    syncBtn.onclick=async ()=>{
+      syncBtn.disabled=true; syncBtn.textContent='同步中…';
+      await pushSync();
+    };
+    const logoutBtn=document.createElement('button'); logoutBtn.type='button'; logoutBtn.textContent='退出登录';
+    logoutBtn.onclick=()=>logoutGithub();
+    row.appendChild(syncBtn); row.appendChild(logoutBtn);
+    container.appendChild(row);
+  }
+}
 
 /* =========================================================
    任务 CRUD
@@ -1916,6 +2176,8 @@ function openSettingsModal(){
       <button type="button" id="themeCopySvg">Copy as svg</button>
       <button type="button" id="themePasteSvg">Paste as svg</button>
     </div>
+    <h3 style="margin-top:14px;">GitHub 同步</h3>
+    <div id="ghSyncSection"></div>
     <h3 style="margin-top:14px;">时段设置</h3>
     <div class="settings-grid" id="stSlots"></div>
     <div class="actions">
@@ -1926,6 +2188,7 @@ function openSettingsModal(){
   mask.appendChild(modal); document.body.appendChild(mask);
   if(window.lucide) lucide.createIcons();
   const $=(sel)=>modal.querySelector(sel);
+  renderGhSyncSection($('#ghSyncSection'));
   $('#stWeekStart').value=String(s.weekStart);
   $('#stMonthView').value=s.monthView;
   $('#stHighlight').value=s.highlightOpacity!=null?s.highlightOpacity:0.16;
@@ -2120,6 +2383,7 @@ window.addEventListener('resize',()=>{ if(updateMobileClass()) renderAll(); });
 window.addEventListener('orientationchange',()=>{ setTimeout(()=>{ if(updateMobileClass()) renderAll(); },150); });
 
 document.body.classList.toggle('is-mobile',mobileMode);
+lastSyncSignature=syncableSnapshot();
 applyTheme();
 renderAll();
 </script>
