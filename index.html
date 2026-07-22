@@ -228,12 +228,16 @@
   #bottombar button.active{color:var(--accent);}
   #bottombar button .lucide{width:18px;height:18px;}
 
-  #topbar #btnFlipMobile{display:none;}
+  #btnSync .lucide{transition:none;}
+  #btnSync.spinning .lucide{animation:dwmy-spin .8s linear infinite;}
+  @keyframes dwmy-spin{to{transform:rotate(360deg);}}
 
   body.is-mobile #bottombar{display:flex;}
   body.is-mobile #app{padding-bottom:50px;}
-  body.is-mobile #flipBtn{display:none;}
-  body.is-mobile #topbar #btnFlipMobile{display:flex;}
+  body.is-mobile #topbar{padding-right:32px;position:relative;}
+  body.is-mobile #flipBtn{position:absolute;left:auto;right:0;top:0;bottom:auto;width:32px;height:32px;}
+  body.is-mobile #flipBtn .tri-a{clip-path:polygon(0 0,0 100%,100% 100%);}
+  body.is-mobile #flipBtn .tri-b{clip-path:polygon(0 0,100% 0,100% 100%);}
 
   /* 一屏一栏：靠 scroll-snap，底部图标/左右滑动都能切换 */
   body.is-mobile #app{scroll-snap-type:x mandatory;}
@@ -263,7 +267,7 @@
   <button id="btnExport" title="导出"></button>
   <button id="btnImport" title="导入"></button>
   <input type="file" id="fileImport" accept="application/json" style="display:none;">
-  <button id="btnFlipMobile" title="翻到反面/正面"></button>
+  <button id="btnSync" title="立即同步" style="display:none;"></button>
   <button id="btnSettings" title="设置"></button>
 </div>
 
@@ -521,6 +525,7 @@ async function handleGithubLoginSuccess(token){
     await reconcileAfterLogin();
     const sec=document.getElementById('ghSyncSection');
     if(sec) renderGhSyncSection(sec);
+    updateTopbarSyncButton();
   }catch(e){
     alert('登录处理失败：'+e.message);
   }
@@ -645,6 +650,14 @@ function logoutGithub(){
   clearTimeout(autoSyncTimer);
   const sec=document.getElementById('ghSyncSection');
   if(sec) renderGhSyncSection(sec);
+  updateTopbarSyncButton();
+}
+
+/* 顶部同步按钮：只在已连接时显示，桌面/移动端通用 */
+function updateTopbarSyncButton(){
+  const btn=document.getElementById('btnSync');
+  if(!btn) return;
+  btn.style.display = isGithubConnected() ? 'flex' : 'none';
 }
 
 /* 设置面板里的 GitHub 同步区块 */
@@ -2359,6 +2372,7 @@ function renderAll(){
   }
   app.scrollLeft=scrollX;
   renderBottomBar();
+  updateTopbarSyncButton();
   if(window.lucide) lucide.createIcons();
   refreshOpenSubtaskPanel();
 }
@@ -2380,8 +2394,14 @@ document.getElementById('fileImport').onchange=(e)=>{ if(e.target.files[0]) impo
 document.getElementById('btnSettings').appendChild(iconEl('settings'));
 document.getElementById('btnSettings').onclick=openSettingsModal;
 document.getElementById('flipBtn').onclick=toggleSide;
-document.getElementById('btnFlipMobile').appendChild(iconEl('repeat'));
-document.getElementById('btnFlipMobile').onclick=toggleSide;
+document.getElementById('btnSync').appendChild(iconEl('repeat'));
+document.getElementById('btnSync').onclick=async ()=>{
+  const btn=document.getElementById('btnSync');
+  btn.classList.add('spinning');
+  await pushSync();
+  btn.classList.remove('spinning');
+};
+updateTopbarSyncButton();
 
 window.addEventListener('resize',()=>{ if(updateMobileClass()) renderAll(); });
 window.addEventListener('orientationchange',()=>{ setTimeout(()=>{ if(updateMobileClass()) renderAll(); },150); });
