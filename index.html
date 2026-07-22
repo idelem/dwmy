@@ -881,29 +881,42 @@ function highlightItemById(id){
 }
 function jumpToItem(id){
   const it=state.items[id]; if(!it) return;
-  const a=it.anchor; const f=state.ui.focus;
-  let colId='life';
-  if(a.level==='slot'||a.level==='day'){ f.day=a.date; colId='day'; }
-  else if(a.level==='week'){ f.week=a.date; colId='week'; }
-  else if(a.level==='month'){ f.month=a.date; colId='month'; }
-  else if(a.level==='year'){ f.year=a.date; colId='year'; }
+  const a=it.anchor;
+  if(a.level==='someday'){
+    state.ui.side='back';
+  }else{
+    state.ui.side='front';
+    const f=state.ui.focus;
+    if(a.level==='slot'||a.level==='day') f.day=a.date;
+    else if(a.level==='week') f.week=a.date;
+    else if(a.level==='month') f.month=a.date;
+    else if(a.level==='year') f.year=a.date;
+  }
   saveState();
   renderAll();
-  requestAnimationFrame(()=>{
-    const colEl=document.querySelector(`.column[data-col="${colId}"]`);
-    if(colEl) colEl.scrollIntoView({behavior:'smooth',inline:'nearest',block:'nearest'});
-  });
   highlightItemById(id);
 }
-/* 子任务面板里点击 item：只让 Day 列跳转到那个时间点，面板保持打开 */
+/* 子任务面板里点击 item：正常情况下让 Day 列跳转到那个时间点；
+   如果这个子任务其实在反面（someday/list），就直接翻到反面去 */
 function jumpDayToItem(id){
   const it=state.items[id]; if(!it) return;
-  const a=it.anchor; let dayKey=null;
+  const a=it.anchor;
+  if(a.level==='someday'){
+    state.ui.side='back';
+    saveState();
+    renderAll();
+    highlightItemById(id);
+    return;
+  }
+  state.ui.side='front';
+  let dayKey=null;
   if(a.level==='slot'||a.level==='day') dayKey=a.date;
   else if(a.level==='week') dayKey=a.date;
   else if(a.level==='month') dayKey=a.date+'-01';
   else if(a.level==='year') dayKey=a.date+'-01-01';
-  if(dayKey){ state.ui.focus.day=dayKey; saveState(); renderAll(); }
+  if(dayKey) state.ui.focus.day=dayKey;
+  saveState();
+  renderAll();
   highlightItemById(id);
 }
 
