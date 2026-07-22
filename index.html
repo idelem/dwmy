@@ -868,6 +868,17 @@ function copyAsChild(sourceId,anchorPatch){
   return id;
 }
 /* 跳转到某个 item 所在的列（用于"跳转到父任务"） */
+/* 跳转到某个 item 后，把它高亮一下（跟 jumpToList 的效果一致） */
+function highlightItemById(id){
+  requestAnimationFrame(()=>{
+    const el=document.querySelector(`.item[data-id="${id}"]`);
+    if(el){
+      el.scrollIntoView({behavior:'smooth',block:'center',inline:'nearest'});
+      el.classList.add('flash-highlight');
+      el.addEventListener('animationend',()=>el.classList.remove('flash-highlight'),{once:true});
+    }
+  });
+}
 function jumpToItem(id){
   const it=state.items[id]; if(!it) return;
   const a=it.anchor; const f=state.ui.focus;
@@ -882,6 +893,7 @@ function jumpToItem(id){
     const colEl=document.querySelector(`.column[data-col="${colId}"]`);
     if(colEl) colEl.scrollIntoView({behavior:'smooth',inline:'nearest',block:'nearest'});
   });
+  highlightItemById(id);
 }
 /* 子任务面板里点击 item：只让 Day 列跳转到那个时间点，面板保持打开 */
 function jumpDayToItem(id){
@@ -892,6 +904,7 @@ function jumpDayToItem(id){
   else if(a.level==='month') dayKey=a.date+'-01';
   else if(a.level==='year') dayKey=a.date+'-01-01';
   if(dayKey){ state.ui.focus.day=dayKey; saveState(); renderAll(); }
+  highlightItemById(id);
 }
 
 /* =========================================================
