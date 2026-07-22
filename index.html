@@ -264,15 +264,15 @@
 
 <div id="topbar">
   <div class="title">DWMY</div>
-  <button id="btnExport" title="导出"></button>
-  <button id="btnImport" title="导入"></button>
+  <button id="btnExport"></button>
+  <button id="btnImport"></button>
   <input type="file" id="fileImport" accept="application/json" style="display:none;">
-  <button id="btnSync" title="立即同步" style="display:none;"></button>
-  <button id="btnSettings" title="设置"></button>
+  <button id="btnSync" style="display:none;"></button>
+  <button id="btnSettings"></button>
 </div>
 
 <div id="app"></div>
-<div id="flipBtn" title="翻到反面/正面">
+<div id="flipBtn">
   <div class="tri-a"></div>
   <div class="tri-b"></div>
 </div>
@@ -311,13 +311,88 @@ function getWeekStartKey(dateKey,weekStart){
   return keyFromDate(d);
 }
 function fmtMD(key){
-  const [y,m,d]=key.split('-');
-  const suffix = y!==yearKeyOf(todayKey()) ? '/'+y : '';
-  return `${Number(m)}/${Number(d)}${suffix}`;
+  const d=dateFromKey(key);
+  const sameYear = yearKeyOf(key)===yearKeyOf(todayKey());
+  const opts = sameYear ? {month:'numeric',day:'numeric'} : {year:'numeric',month:'numeric',day:'numeric'};
+  return new Intl.DateTimeFormat(getCurrentLocale(),opts).format(d);
 }
-function fmtYM(key){const [y,m]=key.split('-');return `${y}年${Number(m)}月`;}
-const WEEKDAY_NAMES=['日','一','二','三','四','五','六'];
-const MONTH_NAMES=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+function fmtYM(key){
+  const [y,m]=key.split('-').map(Number);
+  return new Intl.DateTimeFormat(getCurrentLocale(),{year:'numeric',month:'long'}).format(new Date(y,m-1,1));
+}
+/* dayIndex: 0=周日...6=周六，用一个已知是周日的参照日期来推算，不依赖真实日期 */
+function weekdayName(dayIndex){
+  return new Intl.DateTimeFormat(getCurrentLocale(),{weekday:'short'}).format(new Date(2023,0,1+dayIndex));
+}
+/* monthIndex1to12: 1~12 */
+function monthLongName(monthIndex1to12){
+  return new Intl.DateTimeFormat(getCurrentLocale(),{month:'long'}).format(new Date(2023,monthIndex1to12-1,1));
+}
+
+/* =========================================================
+   本地化（i18n）
+   方案：字典整个嵌在这个文件里（不额外 fetch，file:// 也能用），
+   LOCALES 是唯一的语言注册表——加新语言只用在这里加一个条目，
+   不用改别处任何代码（设置面板的语言下拉框是循环这个对象生成的）。
+   日期/星期/月份不走这个字典，交给上面的 Intl.DateTimeFormat 处理。
+========================================================= */
+const DEFAULT_LOCALE='en';
+const LOCALES={
+  zh:{
+    label:'简体中文',
+    dict:{
+      export:'导出', import:'导入', sync_now:'立即同步', flip_side:'翻到反面/正面', settings:'设置',
+      prev_page:'上一页', next_page:'下一页', align_others:'让其它列对齐到这里',
+      jump_today_day:'跳转到今天', jump_today_week:'跳转到本周', jump_today_month:'跳转到本月',
+      jump_today_year:'跳转到今年', jump_today_life:'跳转到今年',
+      settings_title:'设置', week_start:'周起始', week_start_mon:'周一', week_start_sun:'周日',
+      month_view:'Month视图', month_view_day:'日视图', month_view_week:'周视图',
+      highlight_strength:'高亮强度', time_format:'时间格式', time_format_24:'24小时制',
+      time_format_12:'12小时制（AM/PM）', theme:'主题', bg_color:'背景色', fg_color:'文字色',
+      accent_color:'重点色', language:'语言', language_auto:'自动跟随浏览器',
+      github_sync:'GitHub 同步', slot_settings:'时段设置', cancel:'取消', save:'保存'
+    }
+  },
+  en:{
+    label:'English',
+    dict:{
+      export:'Export', import:'Import', sync_now:'Sync now', flip_side:'Flip front/back', settings:'Settings',
+      prev_page:'Previous', next_page:'Next', align_others:'Align other columns to this one',
+      jump_today_day:'Jump to today', jump_today_week:'Jump to this week', jump_today_month:'Jump to this month',
+      jump_today_year:'Jump to this year', jump_today_life:'Jump to this year',
+      settings_title:'Settings', week_start:'Week starts on', week_start_mon:'Monday', week_start_sun:'Sunday',
+      month_view:'Month view', month_view_day:'Day view', month_view_week:'Week view',
+      highlight_strength:'Highlight strength', time_format:'Time format', time_format_24:'24-hour',
+      time_format_12:'12-hour (AM/PM)', theme:'Theme', bg_color:'Background', fg_color:'Text color',
+      accent_color:'Accent color', language:'Language', language_auto:'Follow browser',
+      github_sync:'GitHub sync', slot_settings:'Time slots', cancel:'Cancel', save:'Save'
+    }
+  }
+};
+function detectLocale(){
+  const langs=navigator.languages||[navigator.language||DEFAULT_LOCALE];
+  for(const l of langs){
+    const lower=(l||'').toLowerCase();
+    if(LOCALES[lower]) return lower;
+    const base=lower.split('-')[0];
+    if(LOCALES[base]) return base;
+  }
+  return DEFAULT_LOCALE;
+}
+function getCurrentLocale(){
+  const pref=state && state.settings && state.settings.locale;
+  if(pref && pref!=='auto' && LOCALES[pref]) return pref;
+  return detectLocale();
+}
+function t(key){
+  const locale=getCurrentLocale();
+  const cur=LOCALES[locale] && LOCALES[locale].dict[key];
+  if(cur!=null) return cur;
+  const fallback=LOCALES[DEFAULT_LOCALE] && LOCALES[DEFAULT_LOCALE].dict[key];
+  if(fallback!=null) return fallback;
+  return key;
+}
+
 
 function iconEl(name){
   const i=document.createElement('i'); i.setAttribute('data-lucide',name); return i;
@@ -355,6 +430,7 @@ const STORAGE_KEY='dwmy_state_v1';
 function defaultSettings(){
   return {
     weekStart:1,
+    locale:'auto',
     daySlots:[
       {name:'上午',start:'06:00',end:'12:00'},
       {name:'下午',start:'12:00',end:'18:00'},
@@ -384,6 +460,8 @@ let state=loadState();
 function migrateState(s){
   if(!s.lists) s.lists={};
   if(!s.listOrder) s.listOrder=[];
+  if(!s.settings) s.settings=defaultSettings();
+  if(!s.settings.locale) s.settings.locale='auto';
   if(!s.ui) s.ui={focus:{day:todayKey(),week:todayKey(),month:monthKeyOf(todayKey()),year:yearKeyOf(todayKey()),life:yearKeyOf(todayKey())}};
   if(!s.ui.side) s.ui.side='front';
   return s;
@@ -1622,17 +1700,17 @@ function equalizeRows(listEl){
 /* =========================================================
    列头
 ========================================================= */
-const TODAY_LABEL={day:'跳转到今天',week:'跳转到本周',month:'跳转到本月',year:'跳转到今年',life:'跳转到今年'};
+const TODAY_LABEL={day:'jump_today_day',week:'jump_today_week',month:'jump_today_month',year:'jump_today_year',life:'jump_today_life'};
 function colHeader(colId,name,focusLabel){
   const header=document.createElement('div'); header.className='col-header';
   const nameEl=document.createElement('span'); nameEl.className='col-name'; nameEl.textContent=name;
   const focusEl=document.createElement('span'); focusEl.className='col-focus'; focusEl.textContent=focusLabel;
   header.appendChild(nameEl);
-  header.appendChild(iconButton('chevron-left','上一页',()=>navigate(colId,-1)));
+  header.appendChild(iconButton('chevron-left',t('prev_page'),()=>navigate(colId,-1)));
   header.appendChild(focusEl);
-  header.appendChild(iconButton('chevron-right','下一页',()=>navigate(colId,1)));
-  header.appendChild(iconButton('crosshair',TODAY_LABEL[colId]||'跳转到今天',()=>jumpToday(colId)));
-  header.appendChild(iconButton('target','让其它列对齐到这里',()=>alignAll(colId)));
+  header.appendChild(iconButton('chevron-right',t('next_page'),()=>navigate(colId,1)));
+  header.appendChild(iconButton('crosshair',t(TODAY_LABEL[colId])||t('jump_today_day'),()=>jumpToday(colId)));
+  header.appendChild(iconButton('target',t('align_others'),()=>alignAll(colId)));
   return header;
 }
 
@@ -1642,7 +1720,7 @@ function colHeader(colId,name,focusLabel){
 function renderDayColumn(root){
   root.innerHTML='';
   const focus=state.ui.focus.day;
-  root.appendChild(colHeader('day','Day',fmtMD(focus)+' 周'+WEEKDAY_NAMES[dateFromKey(focus).getDay()]));
+  root.appendChild(colHeader('day','Day',fmtMD(focus)+' '+weekdayName(dateFromKey(focus).getDay())));
 
   const backlog=document.createElement('div'); backlog.className='backlog no-scrollbar';
   renderBacklog(backlog,getDayBacklog());
@@ -1703,7 +1781,7 @@ function renderWeekColumn(root){
   for(let i=0;i<7;i++){
     const dayKey=addDays(weekStart,i);
     list.appendChild(buildRow({
-      label:`周${WEEKDAY_NAMES[(ws+i)%7]} ${fmtMD(dayKey)}`,
+      label:`周${weekdayName((ws+i)%7)} ${fmtMD(dayKey)}`,
       anchorBase:{level:'day',date:dayKey,slotIndex:null},
       items: state.settings.weekShowSlots ? itemsForDayFull(dayKey) : itemsForDay(dayKey),
       current: dayKey===tk,
@@ -1778,7 +1856,7 @@ function renderMonthColumn(root){
       week.days.forEach(dayKey=>{
         if(monthKeyOf(dayKey)!==focus) return; // 只显示本月内的日期
         const row=buildRow({
-          label:`${Number(dayKey.slice(8))}日 周${WEEKDAY_NAMES[dateFromKey(dayKey).getDay()]}`,
+          label:`${Number(dayKey.slice(8))}日 周${weekdayName(dateFromKey(dayKey).getDay())}`,
           anchorBase:{level:'day',date:dayKey,slotIndex:null},
           items:itemsForDay(dayKey),
           current: dayKey===tk,
@@ -1821,7 +1899,7 @@ function renderYearColumn(root){
   for(let m=1;m<=12;m++){
     const monthKey=`${focus}-${pad2(m)}`;
     list.appendChild(buildRow({
-      label:MONTH_NAMES[m-1],
+      label:monthLongName(m),
       anchorBase:{level:'month',date:monthKey,slotIndex:null},
       items:itemsForMonth(monthKey),
       current: monthKey===thisMonthKey,
@@ -2168,21 +2246,24 @@ function openSettingsModal(){
   const pending={ bgColor:s.bgColor||'#f2f2f2', fgColor:s.fgColor||'#222222', accentColor:s.accentColor||'#4a7fe8' };
 
   modal.innerHTML=`
-    <h3>设置</h3>
-    <div class="row"><label>周起始</label>
-      <select id="stWeekStart"><option value="1">周一</option><option value="0">周日</option></select>
+    <h3>${t('settings_title')}</h3>
+    <div class="row"><label>${t('language')}</label>
+      <select id="stLocale"></select>
     </div>
-    <div class="row"><label>Month视图</label>
-      <select id="stMonthView"><option value="day">日视图</option><option value="week">周视图</option></select>
+    <div class="row"><label>${t('week_start')}</label>
+      <select id="stWeekStart"><option value="1">${t('week_start_mon')}</option><option value="0">${t('week_start_sun')}</option></select>
     </div>
-    <div class="row"><label>高亮强度</label><input id="stHighlight" type="range" min="0.05" max="0.5" step="0.01"></div>
-    <div class="row"><label>时间格式</label>
-      <select id="stTimeFormat"><option value="24">24小时制</option><option value="12">12小时制（AM/PM）</option></select>
+    <div class="row"><label>${t('month_view')}</label>
+      <select id="stMonthView"><option value="day">${t('month_view_day')}</option><option value="week">${t('month_view_week')}</option></select>
     </div>
-    <h3 style="margin-top:14px;">主题</h3>
-    <div class="row"><label>背景色</label><button type="button" id="pkBg" class="color-swatch"></button></div>
-    <div class="row"><label>文字色</label><button type="button" id="pkFg" class="color-swatch"></button></div>
-    <div class="row"><label>重点色</label><button type="button" id="pkAccent" class="color-swatch"></button></div>
+    <div class="row"><label>${t('highlight_strength')}</label><input id="stHighlight" type="range" min="0.05" max="0.5" step="0.01"></div>
+    <div class="row"><label>${t('time_format')}</label>
+      <select id="stTimeFormat"><option value="24">${t('time_format_24')}</option><option value="12">${t('time_format_12')}</option></select>
+    </div>
+    <h3 style="margin-top:14px;">${t('theme')}</h3>
+    <div class="row"><label>${t('bg_color')}</label><button type="button" id="pkBg" class="color-swatch"></button></div>
+    <div class="row"><label>${t('fg_color')}</label><button type="button" id="pkFg" class="color-swatch"></button></div>
+    <div class="row"><label>${t('accent_color')}</label><button type="button" id="pkAccent" class="color-swatch"></button></div>
     <div class="theme-io-row">
       <i data-lucide="hash"></i>
       <button type="button" id="themeCopyHex">Copy as hex</button>
@@ -2193,19 +2274,27 @@ function openSettingsModal(){
       <button type="button" id="themeCopySvg">Copy as svg</button>
       <button type="button" id="themePasteSvg">Paste as svg</button>
     </div>
-    <h3 style="margin-top:14px;">GitHub 同步</h3>
+    <h3 style="margin-top:14px;">${t('github_sync')}</h3>
     <div id="ghSyncSection"></div>
-    <h3 style="margin-top:14px;">时段设置</h3>
+    <h3 style="margin-top:14px;">${t('slot_settings')}</h3>
     <div class="settings-grid" id="stSlots"></div>
     <div class="actions">
-      <button id="stCancel">取消</button>
-      <button id="stSave" class="primary">保存</button>
+      <button id="stCancel">${t('cancel')}</button>
+      <button id="stSave" class="primary">${t('save')}</button>
     </div>
   `;
   mask.appendChild(modal); document.body.appendChild(mask);
   if(window.lucide) lucide.createIcons();
   const $=(sel)=>modal.querySelector(sel);
   renderGhSyncSection($('#ghSyncSection'));
+  const localeSel=$('#stLocale');
+  const autoOpt=document.createElement('option'); autoOpt.value='auto'; autoOpt.textContent=t('language_auto');
+  localeSel.appendChild(autoOpt);
+  Object.keys(LOCALES).forEach(code=>{
+    const opt=document.createElement('option'); opt.value=code; opt.textContent=LOCALES[code].label;
+    localeSel.appendChild(opt);
+  });
+  localeSel.value=s.locale||'auto';
   $('#stWeekStart').value=String(s.weekStart);
   $('#stMonthView').value=s.monthView;
   $('#stHighlight').value=s.highlightOpacity!=null?s.highlightOpacity:0.16;
@@ -2307,6 +2396,7 @@ function openSettingsModal(){
   $('#stCancel').onclick=cancel;
   mask.addEventListener('click',(e)=>{ if(e.target===mask) cancel(); });
   $('#stSave').onclick=()=>{
+    s.locale=$('#stLocale').value;
     s.weekStart=Number($('#stWeekStart').value);
     s.monthView=$('#stMonthView').value;
     s.bgColor=pending.bgColor;
@@ -2373,6 +2463,7 @@ function renderAll(){
   app.scrollLeft=scrollX;
   renderBottomBar();
   updateTopbarSyncButton();
+  applyStaticI18nTitles();
   if(window.lucide) lucide.createIcons();
   refreshOpenSubtaskPanel();
 }
@@ -2386,6 +2477,13 @@ function toggleSide(){
 /* =========================================================
    初始化
 ========================================================= */
+function applyStaticI18nTitles(){
+  const ids={btnExport:'export',btnImport:'import',btnSync:'sync_now',btnSettings:'settings',flipBtn:'flip_side'};
+  Object.keys(ids).forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.title=t(ids[id]);
+  });
+}
 document.getElementById('btnExport').appendChild(iconEl('cloud-download'));
 document.getElementById('btnExport').onclick=exportData;
 document.getElementById('btnImport').appendChild(iconEl('cloud-upload'));
@@ -2402,6 +2500,7 @@ document.getElementById('btnSync').onclick=async ()=>{
   btn.classList.remove('spinning');
 };
 updateTopbarSyncButton();
+applyStaticI18nTitles();
 
 window.addEventListener('resize',()=>{ if(updateMobileClass()) renderAll(); });
 window.addEventListener('orientationchange',()=>{ setTimeout(()=>{ if(updateMobileClass()) renderAll(); },150); });
