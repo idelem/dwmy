@@ -1781,7 +1781,7 @@ function renderWeekColumn(root){
   for(let i=0;i<7;i++){
     const dayKey=addDays(weekStart,i);
     list.appendChild(buildRow({
-      label:`周${weekdayName((ws+i)%7)} ${fmtMD(dayKey)}`,
+      label:`${weekdayName((ws+i)%7)} ${fmtMD(dayKey)}`,
       anchorBase:{level:'day',date:dayKey,slotIndex:null},
       items: state.settings.weekShowSlots ? itemsForDayFull(dayKey) : itemsForDay(dayKey),
       current: dayKey===tk,
@@ -1856,7 +1856,7 @@ function renderMonthColumn(root){
       week.days.forEach(dayKey=>{
         if(monthKeyOf(dayKey)!==focus) return; // 只显示本月内的日期
         const row=buildRow({
-          label:`${Number(dayKey.slice(8))}日 周${weekdayName(dateFromKey(dayKey).getDay())}`,
+          label:`${Number(dayKey.slice(8))}日 ${weekdayName(dateFromKey(dayKey).getDay())}`,
           anchorBase:{level:'day',date:dayKey,slotIndex:null},
           items:itemsForDay(dayKey),
           current: dayKey===tk,
