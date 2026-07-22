@@ -1505,6 +1505,9 @@ function makeDropZone(el,anchorBase){
     group:'dwmy',
     animation:150,
     sort:false,
+    delay:150,
+    delayOnTouchOnly:true,
+    touchStartThreshold:5,
     filter:'.cell-label,.cell-blank,.inline-create',
     preventOnFilter:false,
     onEnd:function(evt){
@@ -2105,6 +2108,9 @@ function setupListSortable(colEl){
     animation:150,
     handle:'.list-card-header',
     draggable:'.list-card',
+    delay:150,
+    delayOnTouchOnly:true,
+    touchStartThreshold:5,
     filter:'.add-list-btn',
     preventOnFilter:false,
     onEnd:function(evt){
@@ -2127,6 +2133,9 @@ function makeListItemDropZone(el,context){
     group:'dwmy-back-items',
     animation:150,
     sort:false,
+    delay:150,
+    delayOnTouchOnly:true,
+    touchStartThreshold:5,
     filter:'.cell-blank,.inline-create',
     preventOnFilter:false,
     onEnd:function(evt){
