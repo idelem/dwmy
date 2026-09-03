@@ -1154,19 +1154,33 @@ function getWeekBacklog(){
 function getMonthBacklog(){
   const tk=todayKey();
   const thisMonthKey=monthKeyOf(tk);
+  const thisMonthFirst=thisMonthKey+'-01';
   const thisYearFirstMonth=yearKeyOf(tk)+'-01';
   return Object.values(state.items).filter(it=>{
     if(!isPending(it))return false;
     if(it.anchor.level==='year'||it.anchor.level==='life'||it.anchor.level==='someday')return false;
+    if(it.anchor.level==='week'){
+      // 周任务不能只看"周起始日期属于哪个月"——这周只要有一天落在当前月里，就不算积压，
+      // 只有这周整体都已经结束、还没跨进当前月，才算上个月的积压
+      const weekEnd=addDays(it.anchor.date,6);
+      return weekEnd<thisMonthFirst && it.anchor.date>=thisYearFirstMonth;
+    }
     let itemMonthKey = it.anchor.level==='month' ? it.anchor.date : monthKeyOf(it.anchor.date);
     return itemMonthKey<thisMonthKey && itemMonthKey>=thisYearFirstMonth;
   });
 }
 function getYearBacklog(){
-  const thisYearKey=yearKeyOf(todayKey());
+  const tk=todayKey();
+  const thisYearKey=yearKeyOf(tk);
+  const thisYearFirst=thisYearKey+'-01-01';
   return Object.values(state.items).filter(it=>{
     if(!isPending(it))return false;
     if(it.anchor.level==='life'||it.anchor.level==='someday')return false;
+    if(it.anchor.level==='week'){
+      // 同样的道理，跨年那一周（比如12月底到1月初）只要还没整体结束就不算去年的积压
+      const weekEnd=addDays(it.anchor.date,6);
+      return weekEnd<thisYearFirst;
+    }
     let itemYearKey = it.anchor.level==='year' ? it.anchor.date : yearKeyOf(it.anchor.level==='month'?(it.anchor.date+'-01'):it.anchor.date);
     return itemYearKey<thisYearKey;
   });
