@@ -680,7 +680,7 @@ async function pushSync(){
     const conn=getGithubConn();
     const body={
       message:'DWMY sync '+new Date().toISOString(),
-      content:b64EncodeUnicode(JSON.stringify(state))
+      content:b64EncodeUnicode(JSON.stringify(state,null,2))
     };
     if(conn.lastSyncedSha) body.sha=conn.lastSyncedSha;
     const resp=await githubApiFetch(`/repos/${conn.owner}/${conn.repo}/contents/${GITHUB_DATA_PATH}`,{
