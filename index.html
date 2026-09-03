@@ -1523,6 +1523,39 @@ function renderItemList(container,items,opts){
 /* 拖拽：整个格子(.cell / .currentperiod)都是拖放目标；shift+拖拽到空白=复制为子任务，
    shift+拖拽到某个已有任务上=建立父子关系；普通拖拽=移动（改锚点） */
 const sortableInstances=[];
+/* 拖放结束的处理逻辑：格子之间的正常拖拽、积压区拖出，都走这一套 */
+function handleFrontDropEnd(evt){
+  const id=evt.item.dataset.id; if(!id) return;
+  const target=evt.to;
+  const oe=evt.originalEvent;
+  const shift=!!(oe && oe.shiftKey);
+  const patch={
+    level: target.dataset.dzLevel,
+    date: target.dataset.dzDate===''?null:target.dataset.dzDate,
+    slotIndex: target.dataset.dzSlot===''?null:Number(target.dataset.dzSlot)
+  };
+  let landedItemId=null;
+  if(oe){
+    const px = oe.clientX!=null ? oe.clientX : (oe.changedTouches && oe.changedTouches[0] && oe.changedTouches[0].clientX);
+    const py = oe.clientY!=null ? oe.clientY : (oe.changedTouches && oe.changedTouches[0] && oe.changedTouches[0].clientY);
+    if(px!=null && py!=null){
+      const under=document.elementFromPoint(px,py);
+      const itemEl=under && under.closest('.item');
+      if(itemEl && itemEl!==evt.item && itemEl.dataset.id) landedItemId=itemEl.dataset.id;
+    }
+  }
+  if(shift){
+    if(landedItemId){
+      const ok=setParent(id,landedItemId);
+      if(!ok) alert('无法关联：会形成循环引用');
+    }else{
+      copyAsChild(id,patch);
+    }
+  }else{
+    moveItemToAnchor(id,patch);
+  }
+  renderAll();
+}
 function makeDropZone(el,anchorBase){
   el.dataset.dzLevel=anchorBase.level;
   el.dataset.dzDate=anchorBase.date==null?'':anchorBase.date;
@@ -1536,38 +1569,23 @@ function makeDropZone(el,anchorBase){
     touchStartThreshold:5,
     filter:'.cell-label,.cell-blank,.inline-create',
     preventOnFilter:false,
-    onEnd:function(evt){
-      const id=evt.item.dataset.id; if(!id) return;
-      const target=evt.to;
-      const oe=evt.originalEvent;
-      const shift=!!(oe && oe.shiftKey);
-      const patch={
-        level: target.dataset.dzLevel,
-        date: target.dataset.dzDate===''?null:target.dataset.dzDate,
-        slotIndex: target.dataset.dzSlot===''?null:Number(target.dataset.dzSlot)
-      };
-      let landedItemId=null;
-      if(oe){
-        const px = oe.clientX!=null ? oe.clientX : (oe.changedTouches && oe.changedTouches[0] && oe.changedTouches[0].clientX);
-        const py = oe.clientY!=null ? oe.clientY : (oe.changedTouches && oe.changedTouches[0] && oe.changedTouches[0].clientY);
-        if(px!=null && py!=null){
-          const under=document.elementFromPoint(px,py);
-          const itemEl=under && under.closest('.item');
-          if(itemEl && itemEl!==evt.item && itemEl.dataset.id) landedItemId=itemEl.dataset.id;
-        }
-      }
-      if(shift){
-        if(landedItemId){
-          const ok=setParent(id,landedItemId);
-          if(!ok) alert('无法关联：会形成循环引用');
-        }else{
-          copyAsChild(id,patch);
-        }
-      }else{
-        moveItemToAnchor(id,patch);
-      }
-      renderAll();
-    }
+    onEnd:handleFrontDropEnd
+  });
+  sortableInstances.push(s);
+}
+/* 积压区：只能把任务拖出去（重新安排到别的格子），不能把任务拖进来——
+   积压本身是算出来的展示层，不是真实的锚点位置 */
+function makeBacklogDragSource(el){
+  const s=Sortable.create(el,{
+    group:{name:'dwmy',pull:true,put:false},
+    animation:150,
+    sort:false,
+    delay:150,
+    delayOnTouchOnly:true,
+    touchStartThreshold:5,
+    filter:'.backlog-label',
+    preventOnFilter:false,
+    onEnd:handleFrontDropEnd
   });
   sortableInstances.push(s);
 }
@@ -1685,6 +1703,7 @@ function renderBacklog(container,items){
   const label=document.createElement('div'); label.className='backlog-label'; label.textContent='积压 · '+items.length;
   container.appendChild(label);
   renderItemList(container,items,{showDate:true});
+  makeBacklogDragSource(container);
 }
 
 /* 生成一个"行"：整个 cell 本身就是可拖放/可点击新建的区域；label 若给了 onLabelClick 则可点击跳转 */
@@ -2479,12 +2498,45 @@ function importData(file){
 const COLUMN_RENDERERS={ day:renderDayColumn, week:renderWeekColumn, month:renderMonthColumn, year:renderYearColumn, life:renderLifeColumn };
 const COLUMN_ORDER=['day','week','month','year','life'];
 
+/* 记住每个内部滚动容器（列内的 cell-list/currentperiod/backlog，反面的 someday-body/masonry-col）
+   的滚动位置，renderAll 重建 DOM 后按同样的 key 找回去，避免整屏刷新时视觉跳动 */
+function scrollKeyFor(el){
+  if(el.classList.contains('cell-list')||el.classList.contains('currentperiod')||el.classList.contains('backlog')){
+    const col=el.closest('.column');
+    if(!col) return null;
+    const type=el.classList.contains('cell-list')?'cell-list':el.classList.contains('currentperiod')?'currentperiod':'backlog';
+    return col.dataset.col+':'+type;
+  }
+  if(el.classList.contains('someday-body')) return 'someday-body';
+  if(el.classList.contains('masonry-col')){
+    const idx=Array.from(el.parentElement.children).filter(c=>c.classList.contains('masonry-col')).indexOf(el);
+    return 'masonry-col:'+idx;
+  }
+  return null;
+}
+const SCROLL_CONTAINER_SELECTOR='.cell-list,.currentperiod,.backlog,.someday-body,.masonry-col';
+function captureScrollPositions(app){
+  const positions={};
+  app.querySelectorAll(SCROLL_CONTAINER_SELECTOR).forEach(el=>{
+    const key=scrollKeyFor(el);
+    if(key) positions[key]=el.scrollTop;
+  });
+  return positions;
+}
+function restoreScrollPositions(app,positions){
+  app.querySelectorAll(SCROLL_CONTAINER_SELECTOR).forEach(el=>{
+    const key=scrollKeyFor(el);
+    if(key && positions[key]!=null) el.scrollTop=positions[key];
+  });
+}
+
 function renderAll(){
   updateMobileClass();
   closeItemMenu();
   destroySortables();
   const app=document.getElementById('app');
   const scrollX=app.scrollLeft;
+  const scrollPositions=captureScrollPositions(app);
   app.innerHTML='';
   if(state.ui.side==='back'){
     renderBackSide(app);
@@ -2496,6 +2548,7 @@ function renderAll(){
     });
   }
   app.scrollLeft=scrollX;
+  restoreScrollPositions(app,scrollPositions);
   renderBottomBar();
   updateTopbarSyncButton();
   applyStaticI18nTitles();
