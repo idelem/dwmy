@@ -197,6 +197,8 @@
     box-shadow:0 4px 16px var(--shadow-a);z-index:1000;min-width:150px;overflow:hidden;}
   .item-menu .mi{padding:6px 10px;font-size:12px;}
   .item-menu .mi:hover{background:var(--accent-faint);}
+  .mention-menu{max-height:220px;overflow-y:auto;}
+  .mention-menu .mi.active{background:var(--accent-faint);}
   .item-menu hr{border:none;border-top:1px solid var(--border);margin:2px 0;}
 
   /* ---------- modal ---------- */
@@ -1608,6 +1610,115 @@ function destroySortables(){
   sortableInstances.length=0;
 }
 
+/* =========================================================
+   #list 提及：标题输入框里打 # 触发 list 名称过滤补全
+   不用真正的 span 高亮（纯 textarea 做不到），靠"每次按键后从光标往前找最近的#"
+   重新推算当前是否处于提及模式——这样退格键天然逐字符生效，
+   退到把 # 也删掉时会自动退出提及模式，不用另外写"整体删除"的特殊逻辑。
+========================================================= */
+let mentionState=null; // {textarea,hashIndex,pendingListIds,filtered,highlightIndex,menuEl}
+
+function closeMentionMenu(){
+  if(mentionState){
+    if(mentionState.menuEl) mentionState.menuEl.remove();
+    mentionState=null;
+  }
+}
+function renderMentionMenu(){
+  if(!mentionState) return;
+  if(mentionState.menuEl){ mentionState.menuEl.remove(); mentionState.menuEl=null; }
+  const {textarea,filtered,highlightIndex}=mentionState;
+  if(filtered.length===0) return;
+  const menu=document.createElement('div'); menu.className='item-menu mention-menu';
+  const rect=textarea.getBoundingClientRect();
+  menu.style.top=(rect.bottom+4)+'px';
+  menu.style.left=Math.min(rect.left,window.innerWidth-180)+'px';
+  filtered.forEach((l,i)=>{
+    const mi=document.createElement('div'); mi.className='mi'+(i===highlightIndex?' active':'');
+    mi.textContent=l.name;
+    mi.onmousedown=(e)=>{ e.preventDefault(); confirmMention(l.id,false); }; // mousedown+preventDefault避免textarea先失焦
+    menu.appendChild(mi);
+  });
+  document.body.appendChild(menu);
+  mentionState.menuEl=menu;
+}
+function updateMentionState(textarea,pendingListIds){
+  const val=textarea.value;
+  const pos=textarea.selectionStart;
+  let hashIndex=-1;
+  for(let i=pos-1;i>=0;i--){
+    const ch=val[i];
+    if(ch==='#'){
+      const prev=i>0?val[i-1]:null;
+      if(prev==null||/\s/.test(prev)) hashIndex=i;
+      break;
+    }
+    if(/\s/.test(ch)) break;
+  }
+  if(hashIndex===-1){ closeMentionMenu(); return; }
+  const filterText=val.slice(hashIndex+1,pos);
+  if(/\s/.test(filterText)){ closeMentionMenu(); return; }
+  const q=filterText.toLowerCase();
+  const filtered=getOrderedLists().filter(l=>l.name.toLowerCase().includes(q));
+  if(!mentionState || mentionState.textarea!==textarea || mentionState.hashIndex!==hashIndex){
+    mentionState={textarea,hashIndex,pendingListIds,filtered,highlightIndex:0,menuEl:null};
+  }else{
+    mentionState.filtered=filtered;
+    if(mentionState.highlightIndex>=filtered.length) mentionState.highlightIndex=0;
+  }
+  renderMentionMenu();
+}
+function confirmMention(listId,insertSpace){
+  if(!mentionState) return;
+  const {textarea,hashIndex,pendingListIds}=mentionState;
+  const val=textarea.value;
+  const pos=textarea.selectionStart;
+  const before=val.slice(0,hashIndex);
+  const after=val.slice(pos);
+  const replacement=insertSpace?' ':'';
+  textarea.value=before+replacement+after;
+  const newPos=before.length+replacement.length;
+  textarea.setSelectionRange(newPos,newPos);
+  pendingListIds.push(listId);
+  closeMentionMenu();
+  autoResizeTextarea(textarea);
+  textarea.focus();
+}
+function attachListMention(textarea,pendingListIds){
+  textarea.addEventListener('input',()=>updateMentionState(textarea,pendingListIds));
+  textarea.addEventListener('keydown',(e)=>{
+    if(!mentionState || mentionState.textarea!==textarea) return;
+    if(e.key==='ArrowDown'){
+      if(mentionState.filtered.length===0) return;
+      e.preventDefault();
+      mentionState.highlightIndex=(mentionState.highlightIndex+1)%mentionState.filtered.length;
+      renderMentionMenu();
+    }else if(e.key==='ArrowUp'){
+      if(mentionState.filtered.length===0) return;
+      e.preventDefault();
+      mentionState.highlightIndex=(mentionState.highlightIndex-1+mentionState.filtered.length)%mentionState.filtered.length;
+      renderMentionMenu();
+    }else if(e.key===' '){
+      if(mentionState.filtered.length>0){
+        e.preventDefault(); e.stopImmediatePropagation();
+        confirmMention(mentionState.filtered[mentionState.highlightIndex].id,true);
+      }else{
+        closeMentionMenu();
+      }
+    }else if(e.key==='Enter'){
+      if(mentionState.filtered.length>0){
+        e.preventDefault(); e.stopImmediatePropagation();
+        confirmMention(mentionState.filtered[mentionState.highlightIndex].id,false);
+      }else{
+        closeMentionMenu();
+      }
+    }else if(e.key==='Escape'){
+      e.stopImmediatePropagation();
+      closeMentionMenu();
+    }
+  });
+}
+
 /* 内联新建 */
 function autoResizeTextarea(ta){
   ta.style.height='auto';
@@ -1618,7 +1729,7 @@ function startInlineCreate(itemsEl,anchorBase,opts){
   if(itemsEl.querySelector('.inline-create')){ itemsEl.querySelector('.ic-title').focus(); return; }
   const row=document.createElement('div'); row.className='inline-create';
   row.innerHTML=`
-    <textarea class="ic-title" rows="1" placeholder="输入标题，支持简单markdown，回车保存，Shift+回车换行"></textarea>
+    <textarea class="ic-title" rows="1" placeholder="输入标题，支持简单markdown，#关联list，回车保存，Shift+回车换行"></textarea>
     <button type="button" class="ic-time-btn" title="设置时间点"><i data-lucide="clock"></i></button>
     <input type="time" class="ic-time" style="display:none;">
   `;
@@ -1628,6 +1739,7 @@ function startInlineCreate(itemsEl,anchorBase,opts){
   const titleInp=row.querySelector('.ic-title');
   const timeBtn=row.querySelector('.ic-time-btn');
   const timeInp=row.querySelector('.ic-time');
+  const pendingListIds=[];
   let committed=false;
   timeBtn.onclick=(e)=>{
     e.stopPropagation();
@@ -1636,17 +1748,20 @@ function startInlineCreate(itemsEl,anchorBase,opts){
   };
   function commit(){
     if(committed) return; committed=true;
+    closeMentionMenu();
     const title=titleInp.value.trim();
     if(title){
       const newId=createItemSmart(anchorBase,title,timeInp.value||null);
+      pendingListIds.forEach(lid=>addItemToList(newId,lid));
       if(opts.afterCreate) opts.afterCreate(newId);
     }
     renderAll();
   }
+  attachListMention(titleInp,pendingListIds);
   titleInp.addEventListener('input',()=>autoResizeTextarea(titleInp));
   titleInp.addEventListener('keydown',(e)=>{
     if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); commit(); }
-    else if(e.key==='Escape'){ committed=true; row.remove(); }
+    else if(e.key==='Escape'){ committed=true; closeMentionMenu(); row.remove(); }
   });
   timeInp.addEventListener('keydown',(e)=>{
     if(e.key==='Enter'){ e.preventDefault(); commit(); }
@@ -1674,6 +1789,7 @@ function startInlineEditItem(itemEl,it){
   if(window.lucide) lucide.createIcons();
 
   let committed=false;
+  const pendingListIds=[];
   timeBtn.onclick=(e)=>{
     e.stopPropagation();
     timeInp.style.display = timeInp.style.display==='none' ? 'inline-block' : 'none';
@@ -1681,14 +1797,19 @@ function startInlineEditItem(itemEl,it){
   };
   function commit(){
     if(committed) return; committed=true;
+    closeMentionMenu();
     const title=titleInp.value.trim();
-    if(title) updateItemTitle(it.id,title,timeInp.value||null);
+    if(title){
+      updateItemTitle(it.id,title,timeInp.value||null);
+      pendingListIds.forEach(lid=>addItemToList(it.id,lid));
+    }
     renderAll();
   }
+  attachListMention(titleInp,pendingListIds);
   titleInp.addEventListener('input',()=>autoResizeTextarea(titleInp));
   titleInp.addEventListener('keydown',(e)=>{
     if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); commit(); }
-    else if(e.key==='Escape'){ committed=true; renderAll(); }
+    else if(e.key==='Escape'){ committed=true; closeMentionMenu(); renderAll(); }
   });
   timeInp.addEventListener('keydown',(e)=>{
     if(e.key==='Enter'){ e.preventDefault(); commit(); }
@@ -2547,6 +2668,7 @@ function restoreScrollPositions(app,positions){
 function renderAll(){
   updateMobileClass();
   closeItemMenu();
+  closeMentionMenu();
   destroySortables();
   const app=document.getElementById('app');
   const scrollX=app.scrollLeft;
