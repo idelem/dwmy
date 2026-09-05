@@ -1014,6 +1014,28 @@ function handleHashClick(itemId,anchorEl){
   if(lists.length===1){ jumpToList(lists[0].id); }
   else{ openListChooserMenu(lists,anchorEl); }
 }
+/* 通用浮动菜单定位：menuEl 内容建好但还没加进 DOM时调用。
+   会把它加进 body，量出真实尺寸，默认放在 anchorRect 下方；
+   放不下（会超出视口底部）就翻到上方；横向同样做溢出保护。 */
+function positionFloatingMenu(menuEl,anchorRect,opts){
+  opts=opts||{};
+  const margin=4;
+  document.body.appendChild(menuEl);
+  const menuRect=menuEl.getBoundingClientRect();
+  let top=anchorRect.bottom+margin;
+  if(top+menuRect.height>window.innerHeight-margin){
+    const above=anchorRect.top-menuRect.height-margin;
+    top = above>=margin ? above : Math.max(margin,window.innerHeight-menuRect.height-margin);
+  }
+  let left=anchorRect.left;
+  if(left+menuRect.width>window.innerWidth-margin){
+    left=window.innerWidth-menuRect.width-margin;
+  }
+  if(left<margin) left=margin;
+  menuEl.style.top=top+'px';
+  menuEl.style.left=left+'px';
+  return menuEl;
+}
 function openListChooserMenu(lists,anchorEl){
   if(mobileMode){
     closeItemMenu();
@@ -1029,14 +1051,12 @@ function openListChooserMenu(lists,anchorEl){
   closeItemMenu();
   const menu=document.createElement('div'); menu.className='item-menu';
   const rect=anchorEl.getBoundingClientRect();
-  menu.style.top=(rect.bottom+4)+'px';
-  menu.style.left=Math.min(rect.left,window.innerWidth-180)+'px';
   lists.forEach(l=>{
     const mi=document.createElement('div'); mi.className='mi'; mi.textContent=l.name;
     mi.onclick=()=>{ closeItemMenu(); jumpToList(l.id); };
     menu.appendChild(mi);
   });
-  document.body.appendChild(menu);
+  positionFloatingMenu(menu,rect);
   openMenuEl=menu;
   anchorEl.classList.add('open');
 }
@@ -1279,13 +1299,11 @@ function openSubtaskPanelFor(parentId,anchorEl){
     renderSubtaskPanelContent();
     return;
   }
-  const panel=document.createElement('div'); panel.className='subtask-panel';
-  document.body.appendChild(panel);
+  const panel=document.createElement('div'); panel.className='subtask-panel no-scrollbar';
   const rect=anchorEl.getBoundingClientRect();
-  panel.style.top=(rect.bottom+4)+'px';
-  panel.style.left=Math.min(rect.left,window.innerWidth-300)+'px';
   openSubtaskPanel={parentId,el:panel,mobile:false};
   renderSubtaskPanelContent();
+  positionFloatingMenu(panel,rect);
 }
 function renderSubtaskPanelContent(){
   if(!openSubtaskPanel) return;
@@ -1406,10 +1424,8 @@ function openItemMenu(btn,id,listContext){
   closeItemMenu();
   const menu=document.createElement('div'); menu.className='item-menu';
   const rect=btn.getBoundingClientRect();
-  menu.style.top=(rect.bottom+4)+'px';
-  menu.style.left=Math.min(rect.left,window.innerWidth-170)+'px';
   renderMenuItemsInto(menu,items,closeItemMenu);
-  document.body.appendChild(menu);
+  positionFloatingMenu(menu,rect);
   openMenuEl=menu;
   btn.classList.add('open');
   if(window.lucide) lucide.createIcons();
@@ -1616,7 +1632,7 @@ function destroySortables(){
    重新推算当前是否处于提及模式——这样退格键天然逐字符生效，
    退到把 # 也删掉时会自动退出提及模式，不用另外写"整体删除"的特殊逻辑。
 ========================================================= */
-let mentionState=null; // {textarea,hashIndex,pendingListIds,filtered,highlightIndex,menuEl}
+let mentionState=null; // {textarea,hashIndex,pendingMentions,filtered,highlightIndex,menuEl}
 
 function closeMentionMenu(){
   if(mentionState){
@@ -1629,20 +1645,20 @@ function renderMentionMenu(){
   if(mentionState.menuEl){ mentionState.menuEl.remove(); mentionState.menuEl=null; }
   const {textarea,filtered,highlightIndex}=mentionState;
   if(filtered.length===0) return;
-  const menu=document.createElement('div'); menu.className='item-menu mention-menu';
+  const menu=document.createElement('div'); menu.className='item-menu mention-menu no-scrollbar';
   const rect=textarea.getBoundingClientRect();
-  menu.style.top=(rect.bottom+4)+'px';
-  menu.style.left=Math.min(rect.left,window.innerWidth-180)+'px';
   filtered.forEach((l,i)=>{
     const mi=document.createElement('div'); mi.className='mi'+(i===highlightIndex?' active':'');
     mi.textContent=l.name;
-    mi.onmousedown=(e)=>{ e.preventDefault(); confirmMention(l.id,false); }; // mousedown+preventDefault避免textarea先失焦
+    mi.onmousedown=(e)=>{ e.preventDefault(); resolveMention(l.id); }; // mousedown+preventDefault避免textarea先失焦
     menu.appendChild(mi);
   });
-  document.body.appendChild(menu);
+  positionFloatingMenu(menu,rect);
+  const activeEl=menu.querySelector('.mi.active');
+  if(activeEl) activeEl.scrollIntoView({block:'nearest'});
   mentionState.menuEl=menu;
 }
-function updateMentionState(textarea,pendingListIds){
+function updateMentionState(textarea,pendingMentions){
   const val=textarea.value;
   const pos=textarea.selectionStart;
   let hashIndex=-1;
@@ -1661,33 +1677,60 @@ function updateMentionState(textarea,pendingListIds){
   const q=filterText.toLowerCase();
   const filtered=getOrderedLists().filter(l=>l.name.toLowerCase().includes(q));
   if(!mentionState || mentionState.textarea!==textarea || mentionState.hashIndex!==hashIndex){
-    mentionState={textarea,hashIndex,pendingListIds,filtered,highlightIndex:0,menuEl:null};
+    mentionState={textarea,hashIndex,pendingMentions,filtered,highlightIndex:0,menuEl:null};
   }else{
     mentionState.filtered=filtered;
     if(mentionState.highlightIndex>=filtered.length) mentionState.highlightIndex=0;
   }
   renderMentionMenu();
 }
-function confirmMention(listId,insertSpace){
+/* 选中一个 list：把已经打出来的那段"#过滤词"（不管是完整打的、打了一半的还是空的）
+   替换成完整的 "#ListName"——这样标题里始终显示的是真正选中的 list 名字，不是用户自己敲的那部分。
+   真正的文字清理放到任务保存的那一刻统一做（那时候如果发现这段文字已经被用户删掉了，
+   就当作取消关联，不会强行把 list 加上）。
+   为了不让"选完之后接着打字"跟这段文字连在一起、被误判成还在同一个提及里，
+   统一在后面补一个边界空格（不管是空格/回车/点击哪种方式触发的，行为一致）。 */
+function resolveMention(listId){
   if(!mentionState) return;
-  const {textarea,hashIndex,pendingListIds}=mentionState;
-  const val=textarea.value;
+  const {textarea,hashIndex,pendingMentions}=mentionState;
   const pos=textarea.selectionStart;
+  const val=textarea.value;
+  const list=state.lists[listId];
+  const fullText='#'+(list?list.name:'');
   const before=val.slice(0,hashIndex);
   const after=val.slice(pos);
-  const replacement=insertSpace?' ':'';
+  const nextChar=after.slice(0,1);
+  const needSpace=nextChar!==' '&&nextChar!=='\n';
+  const replacement=fullText+(needSpace?' ':'');
   textarea.value=before+replacement+after;
+  pendingMentions.push({listId,text:fullText});
   const newPos=before.length+replacement.length;
   textarea.setSelectionRange(newPos,newPos);
-  pendingListIds.push(listId);
   closeMentionMenu();
   autoResizeTextarea(textarea);
   textarea.focus();
 }
-function attachListMention(textarea,pendingListIds){
-  textarea.addEventListener('input',()=>updateMentionState(textarea,pendingListIds));
+/* 任务保存时调用：按记录的完整文字去标题里找，找得到就摘掉、计入生效的关联；
+   找不到（用户后来把这段文字删掉了）就跳过，不关联这个 list。
+   返回清理干净的标题，和实际生效（真正要 addItemToList 的）那部分关联。 */
+function resolvePendingMentions(title,pendingMentions){
+  let result=title;
+  const applied=[];
+  pendingMentions.forEach(m=>{
+    const idx=result.indexOf(m.text);
+    if(idx!==-1){
+      result=result.slice(0,idx)+result.slice(idx+m.text.length);
+      applied.push(m);
+    }
+  });
+  result=result.replace(/[ \t]{2,}/g,' ').trim();
+  return {title:result,applied};
+}
+function attachListMention(textarea,pendingMentions){
+  textarea.addEventListener('input',()=>updateMentionState(textarea,pendingMentions));
   textarea.addEventListener('keydown',(e)=>{
     if(!mentionState || mentionState.textarea!==textarea) return;
+    if(e.isComposing||e.keyCode===229) return; // 输入法组字过程中的按键交给输入法自己处理，不要拦截
     if(e.key==='ArrowDown'){
       if(mentionState.filtered.length===0) return;
       e.preventDefault();
@@ -1701,14 +1744,14 @@ function attachListMention(textarea,pendingListIds){
     }else if(e.key===' '){
       if(mentionState.filtered.length>0){
         e.preventDefault(); e.stopImmediatePropagation();
-        confirmMention(mentionState.filtered[mentionState.highlightIndex].id,true);
+        resolveMention(mentionState.filtered[mentionState.highlightIndex].id);
       }else{
         closeMentionMenu();
       }
     }else if(e.key==='Enter'){
       if(mentionState.filtered.length>0){
         e.preventDefault(); e.stopImmediatePropagation();
-        confirmMention(mentionState.filtered[mentionState.highlightIndex].id,false);
+        resolveMention(mentionState.filtered[mentionState.highlightIndex].id);
       }else{
         closeMentionMenu();
       }
@@ -1739,7 +1782,7 @@ function startInlineCreate(itemsEl,anchorBase,opts){
   const titleInp=row.querySelector('.ic-title');
   const timeBtn=row.querySelector('.ic-time-btn');
   const timeInp=row.querySelector('.ic-time');
-  const pendingListIds=[];
+  const pendingMentions=[];
   let committed=false;
   timeBtn.onclick=(e)=>{
     e.stopPropagation();
@@ -1749,18 +1792,21 @@ function startInlineCreate(itemsEl,anchorBase,opts){
   function commit(){
     if(committed) return; committed=true;
     closeMentionMenu();
-    const title=titleInp.value.trim();
+    const {title,applied}=resolvePendingMentions(titleInp.value.trim(),pendingMentions);
     if(title){
       const newId=createItemSmart(anchorBase,title,timeInp.value||null);
-      pendingListIds.forEach(lid=>addItemToList(newId,lid));
+      applied.forEach(m=>addItemToList(newId,m.listId));
       if(opts.afterCreate) opts.afterCreate(newId);
     }
     renderAll();
   }
-  attachListMention(titleInp,pendingListIds);
+  attachListMention(titleInp,pendingMentions);
   titleInp.addEventListener('input',()=>autoResizeTextarea(titleInp));
   titleInp.addEventListener('keydown',(e)=>{
-    if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); commit(); }
+    if(e.key==='Enter' && !e.shiftKey){
+      if(e.isComposing||e.keyCode===229) return;
+      e.preventDefault(); commit();
+    }
     else if(e.key==='Escape'){ committed=true; closeMentionMenu(); row.remove(); }
   });
   timeInp.addEventListener('keydown',(e)=>{
@@ -1789,7 +1835,7 @@ function startInlineEditItem(itemEl,it){
   if(window.lucide) lucide.createIcons();
 
   let committed=false;
-  const pendingListIds=[];
+  const pendingMentions=[];
   timeBtn.onclick=(e)=>{
     e.stopPropagation();
     timeInp.style.display = timeInp.style.display==='none' ? 'inline-block' : 'none';
@@ -1798,17 +1844,20 @@ function startInlineEditItem(itemEl,it){
   function commit(){
     if(committed) return; committed=true;
     closeMentionMenu();
-    const title=titleInp.value.trim();
+    const {title,applied}=resolvePendingMentions(titleInp.value.trim(),pendingMentions);
     if(title){
       updateItemTitle(it.id,title,timeInp.value||null);
-      pendingListIds.forEach(lid=>addItemToList(it.id,lid));
+      applied.forEach(m=>addItemToList(it.id,m.listId));
     }
     renderAll();
   }
-  attachListMention(titleInp,pendingListIds);
+  attachListMention(titleInp,pendingMentions);
   titleInp.addEventListener('input',()=>autoResizeTextarea(titleInp));
   titleInp.addEventListener('keydown',(e)=>{
-    if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); commit(); }
+    if(e.key==='Enter' && !e.shiftKey){
+      if(e.isComposing||e.keyCode===229) return;
+      e.preventDefault(); commit();
+    }
     else if(e.key==='Escape'){ committed=true; closeMentionMenu(); renderAll(); }
   });
   timeInp.addEventListener('keydown',(e)=>{
