@@ -241,6 +241,20 @@
   body.is-mobile #flipBtn .tri-a{clip-path:polygon(0 0,0 100%,100% 100%);}
   body.is-mobile #flipBtn .tri-b{clip-path:polygon(0 0,100% 0,100% 100%);}
 
+  /* iOS 上输入框字号小于16px时聚焦会自动放大页面，统一设成16px规避；
+     很多输入框用的是 font:inherit，选择器优先级天然会比这条高，所以这里用 !important 保底 */
+  body.is-mobile input,
+  body.is-mobile select,
+  body.is-mobile textarea,
+  body.is-mobile .col-focus,
+  body.is-mobile .list-name,
+  body.is-mobile .item{
+    font-size:16px !important;
+  }
+  body.is-mobile .toolbar button{
+    font: size 14px;
+  }
+
   /* 一屏一栏：靠 scroll-snap，底部图标/左右滑动都能切换 */
   body.is-mobile #app{scroll-snap-type:x mandatory;}
   body.is-mobile .column{flex:0 0 100%;max-width:100%;min-width:100%;scroll-snap-align:start;}
