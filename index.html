@@ -1545,10 +1545,6 @@ function renderItemEl(it,opts){
     el.appendChild(badge);
   }
 
-  const menuBtn=document.createElement('button'); menuBtn.className='menu-btn'; menuBtn.textContent='\u22ee'; menuBtn.title='更多操作';
-  menuBtn.onclick=(e)=>{e.stopPropagation();openItemMenu(menuBtn,it.id,opts.listContext);};
-  el.appendChild(menuBtn);
-
   if(opts.showUnlink){
     const unlinkBtn=document.createElement('button'); unlinkBtn.type='button'; unlinkBtn.className='unlink-btn';
     unlinkBtn.title='解除与父任务的关联'; unlinkBtn.appendChild(iconEl('git-branch-minus'));
@@ -1562,6 +1558,10 @@ function renderItemEl(it,opts){
     hashBtn.onclick=(e)=>{ e.stopPropagation(); handleHashClick(it.id,hashBtn); };
     el.appendChild(hashBtn);
   }
+
+  const menuBtn=document.createElement('button'); menuBtn.className='menu-btn'; menuBtn.textContent='\u22ee'; menuBtn.title='更多操作';
+  menuBtn.onclick=(e)=>{e.stopPropagation();openItemMenu(menuBtn,it.id,opts.listContext);};
+  el.appendChild(menuBtn);
 
   el.addEventListener('contextmenu',(e)=>{
     e.preventDefault();
