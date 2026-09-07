@@ -181,6 +181,7 @@
   #flipBtn:hover{opacity:.85;}
 
   .lucide{width:14px;height:14px;stroke-width:2;vertical-align:middle;display:block;}
+  .lucide.icon-filled{fill:currentColor;stroke:none;}
 
   /* ---------- inline create ---------- */
   .inline-create{display:flex;align-items:flex-start;gap:4px;flex:0 0 auto;padding:2px 0;}
@@ -1494,8 +1495,14 @@ function renderItemEl(it,opts){
 
   const cb=document.createElement('div'); cb.className='cb';
   if(it.type==='task'){
-    const iconName = it.state==='todo' ? 'circle' : it.state==='started' ? 'circle-dot' : it.state==='done' ? 'check' : 'x';
-    cb.appendChild(iconEl(iconName));
+    let iconName, filled=false;
+    if(it.state==='todo'){ iconName='circle'; }
+    else if(it.state==='started'){ iconName='circle'; filled=true; }
+    else if(it.state==='done'){ iconName='check'; }
+    else { iconName='x'; }
+    const cbIcon=iconEl(iconName);
+    if(filled) cbIcon.classList.add('icon-filled');
+    cb.appendChild(cbIcon);
     cb.title = it.state==='todo'?'待办（点击切换）': it.state==='started'?'进行中（点击切换）': it.state==='done'?'已完成（点击切换）':'已取消';
     cb.onclick=(e)=>{e.stopPropagation();cycleState(it.id);renderAll();};
   }else{
