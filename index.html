@@ -1184,7 +1184,8 @@ function getWeekBacklog(){
     if(!isPending(it))return false;
     if(it.anchor.level==='month'||it.anchor.level==='year'||it.anchor.level==='life'||it.anchor.level==='someday')return false;
     const itemWeekStart=getWeekStartKey(it.anchor.date,ws);
-    return itemWeekStart<thisWeekStart && itemWeekStart>=thisMonthFirst;
+    const itemWeekEnd=addDays(itemWeekStart,6);
+    return itemWeekStart<thisWeekStart && itemWeekEnd>=thisMonthFirst;
   });
 }
 function getMonthBacklog(){
